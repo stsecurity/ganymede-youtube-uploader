@@ -20,6 +20,8 @@ python -m scripts.init_youtube_oauth
 docker compose -f docker-compose.example.yml up --build
 ```
 
+5. Open `http://localhost:8000`. On first start, create the admin account.
+
 ## API
 
 - `GET /health`
@@ -29,6 +31,19 @@ docker compose -f docker-compose.example.yml up --build
 - `POST /jobs/{job_id}/retry`
 - `POST /jobs/{job_id}/verify`
 - `POST /jobs/{job_id}/cleanup`
+
+## Web UI
+
+The service includes a small admin UI at `/`.
+
+On first start it redirects to `/setup` so you can create the first admin account. After login, the dashboard has:
+
+- `Status / Log`: tracked channel label, linked YouTube channel label, job counts, current running task, recent uploads, cleanup status, and retry actions for failed jobs.
+- `Settings`: editable service settings. Values are stored in SQLite and mirrored to the configured `.env` file when the app can write it.
+
+The `TRACKED_TWITCH_CHANNEL` field is only a label/config value for this uploader. It does not enable Twitch monitoring and the service still does not call Twitch APIs.
+
+Settings supplied by Docker or the process environment can take effect only after the service is restarted. Settings saved in the UI are used as SQLite overrides for new job processing where possible.
 
 ## CLI
 
@@ -60,4 +75,3 @@ pip install -e ".[dev]"
 ruff check .
 pytest
 ```
-

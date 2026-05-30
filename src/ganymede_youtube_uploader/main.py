@@ -11,6 +11,8 @@ from .logging_config import configure_logging
 from .models import JobStatus, UploadJob
 from .schemas import HealthRead, JobRead, WebhookAccepted
 from .security import verify_webhook_secret, webhook_secret_header
+from .ui import router as ui_router
+from .ui_settings import build_effective_settings
 
 configure_logging()
 app = FastAPI(title="ganymede-youtube-uploader")
@@ -37,7 +39,7 @@ async def process_job_background(job_id: int) -> None:
     session = SessionLocal()
     try:
         job = get_job_or_404(session, job_id)
-        await JobProcessor(get_settings()).process(session, job)
+        await JobProcessor(build_effective_settings(session)).process(session, job)
     finally:
         session.close()
 
@@ -93,7 +95,7 @@ async def retry_job(
     job.status = JobStatus.RECEIVED
     job.last_error = None
     session.commit()
-    return await JobProcessor(settings).process(session, job)
+    return await JobProcessor(build_effective_settings(session)).process(session, job)
 
 
 @app.post("/jobs/{job_id}/verify", response_model=JobRead)
@@ -103,7 +105,7 @@ async def verify_job(
     settings: AppSettings,
 ) -> UploadJob:
     job = get_job_or_404(session, job_id)
-    return await JobProcessor(settings).verify_and_cleanup(session, job)
+    return await JobProcessor(build_effective_settings(session)).verify_and_cleanup(session, job)
 
 
 @app.post("/jobs/{job_id}/cleanup", response_model=JobRead)
@@ -115,4 +117,7 @@ async def cleanup_job(
     job = get_job_or_404(session, job_id)
     if job.status != JobStatus.VERIFIED:
         raise HTTPException(status_code=409, detail="Cleanup requires verified YouTube processing")
-    return await JobProcessor(settings).cleanup_only(session, job)
+    return await JobProcessor(build_effective_settings(session)).cleanup_only(session, job)
+
+
+app.include_router(ui_router)

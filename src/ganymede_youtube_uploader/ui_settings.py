@@ -1,0 +1,122 @@
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from .config import Settings, get_settings
+from .models import AppSetting
+
+SETTING_FIELDS = [
+    "APP_BASE_URL",
+    "APP_WEBHOOK_SECRET",
+    "UI_SESSION_SECRET",
+    "DATABASE_URL",
+    "GANYMEDE_BASE_URL",
+    "GANYMEDE_API_KEY",
+    "GANYMEDE_VIDEOS_MOUNT",
+    "GANYMEDE_VIDEOS_ROOT_IN_GANYMEDE",
+    "YOUTUBE_CLIENT_SECRET_FILE",
+    "YOUTUBE_TOKEN_FILE",
+    "YOUTUBE_DEFAULT_PRIVACY",
+    "YOUTUBE_FINAL_PRIVACY",
+    "YOUTUBE_CATEGORY_ID",
+    "YOUTUBE_NOTIFY_SUBSCRIBERS",
+    "UPLOAD_CHUNK_SIZE_MB",
+    "YOUTUBE_VERIFY_TIMEOUT_MINUTES",
+    "YOUTUBE_VERIFY_INTERVAL_SECONDS",
+    "DURATION_TOLERANCE_SECONDS",
+    "REQUIRE_AUDIO_STREAM",
+    "TRACKED_TWITCH_CHANNEL",
+    "LINKED_YOUTUBE_CHANNEL",
+    "WEBHOOK_NOTIFICATIONS_ENABLED",
+    "WEBHOOK_NOTIFICATION_URL",
+]
+
+SECRET_FIELDS = {"APP_WEBHOOK_SECRET", "UI_SESSION_SECRET", "GANYMEDE_API_KEY"}
+BOOLEAN_FIELDS = {
+    "YOUTUBE_NOTIFY_SUBSCRIBERS",
+    "REQUIRE_AUDIO_STREAM",
+    "WEBHOOK_NOTIFICATIONS_ENABLED",
+}
+INTEGER_FIELDS = {
+    "UPLOAD_CHUNK_SIZE_MB",
+    "YOUTUBE_VERIFY_TIMEOUT_MINUTES",
+    "YOUTUBE_VERIFY_INTERVAL_SECONDS",
+    "DURATION_TOLERANCE_SECONDS",
+}
+
+
+def env_to_attr(key: str) -> str:
+    return key.lower()
+
+
+def get_setting_overrides(session: Session) -> dict[str, str]:
+    return {setting.key: setting.value for setting in session.query(AppSetting).all()}
+
+
+def current_ui_settings(session: Session, settings: Settings) -> dict[str, str]:
+    overrides = get_setting_overrides(session)
+    values = {}
+    for key in SETTING_FIELDS:
+        attr = env_to_attr(key)
+        values[key] = overrides.get(key, str(getattr(settings, attr, "") or ""))
+    return values
+
+
+def update_ui_settings(session: Session, submitted: dict[str, str], settings: Settings) -> None:
+    current = current_ui_settings(session, settings)
+    for key in SETTING_FIELDS:
+        value = submitted.get(key, "")
+        if key in SECRET_FIELDS and not value:
+            value = current.get(key, "")
+        value = normalize_setting_value(key, value)
+        setting = session.get(AppSetting, key)
+        if setting:
+            setting.value = value
+        else:
+            session.add(AppSetting(key=key, value=value))
+    session.commit()
+    write_env_file(settings.ui_env_file, current_ui_settings(session, settings))
+    get_settings.cache_clear()
+
+
+def normalize_setting_value(key: str, value: str) -> str:
+    value = value.strip()
+    if key in BOOLEAN_FIELDS:
+        return "true" if value.lower() in {"1", "true", "on", "yes"} else "false"
+    return value
+
+
+def build_effective_settings(session: Session) -> Settings:
+    base = get_settings()
+    updates: dict[str, Any] = {}
+    for key, value in get_setting_overrides(session).items():
+        if key not in SETTING_FIELDS:
+            continue
+        attr = env_to_attr(key)
+        if key in BOOLEAN_FIELDS:
+            updates[attr] = value.lower() in {"1", "true", "on", "yes"}
+        elif key in INTEGER_FIELDS and value:
+            updates[attr] = int(value)
+        elif key in {
+            "GANYMEDE_VIDEOS_MOUNT",
+            "YOUTUBE_CLIENT_SECRET_FILE",
+            "YOUTUBE_TOKEN_FILE",
+        }:
+            updates[attr] = Path(value)
+        else:
+            updates[attr] = value
+    return base.model_copy(update=updates)
+
+
+def write_env_file(path: Path, values: dict[str, str]) -> None:
+    existing: dict[str, str] = {}
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line or line.lstrip().startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            existing[key] = value
+    existing.update(values)
+    lines = [f"{key}={existing[key]}" for key in sorted(existing)]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")

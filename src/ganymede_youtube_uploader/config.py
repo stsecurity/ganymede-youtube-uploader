@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     app_base_url: str = ""
     app_webhook_secret: str = ""
+    ui_session_secret: str = ""
+    ui_env_file: Path = Path(".env")
     database_url: str = "sqlite:////data/uploader.sqlite"
 
     ganymede_base_url: str = "http://ganymede:4000/api/v1"
@@ -31,6 +33,11 @@ class Settings(BaseSettings):
 
     duration_tolerance_seconds: int = Field(default=30, ge=0)
     require_audio_stream: bool = False
+
+    tracked_twitch_channel: str = ""
+    linked_youtube_channel: str = ""
+    webhook_notifications_enabled: bool = False
+    webhook_notification_url: str = ""
 
     @computed_field
     @property
