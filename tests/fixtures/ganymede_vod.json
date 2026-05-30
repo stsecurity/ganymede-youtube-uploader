@@ -1,0 +1,9 @@
+{
+  "id": "vod-1",
+  "external_id": "12345",
+  "title": "Test VOD",
+  "status": "completed",
+  "video_path": "/data/videos/channel/video.mp4",
+  "duration": 120
+}
+

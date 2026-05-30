@@ -1,0 +1,42 @@
+# Project instructions and local agent context
+AGENTS.md
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*secret*.json
+*token*.json
+youtube_client_secret.json
+youtube_token.json
+
+# Runtime state
+/data/
+/uploader-data/
+*.sqlite
+*.sqlite3
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

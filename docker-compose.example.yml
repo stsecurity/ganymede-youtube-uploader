@@ -1,0 +1,10 @@
+services:
+  uploader:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploader-data:/data
+      - ./ganymede/videos:/ganymede/videos:ro
+
