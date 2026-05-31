@@ -68,6 +68,44 @@ class GanymedeClient:
             return data[0]
         return data
 
+    async def find_vod_by_title_and_channel(
+        self,
+        title: str,
+        channel_name: str,
+        with_channel: bool = True,
+        with_queue: bool = True,
+    ) -> dict[str, Any]:
+        data = await self._request(
+            "GET",
+            "vod",
+            params={
+                "title": title,
+                "channel_name": channel_name,
+                "with_channel": with_channel,
+                "with_queue": with_queue,
+                "limit": 25,
+            },
+        )
+        candidates = data if isinstance(data, list) else data.get("items", data.get("data", []))
+        for vod in candidates:
+            if _normalized(vod.get("title")) != _normalized(title):
+                continue
+            channel = vod.get("channel") if isinstance(vod.get("channel"), dict) else {}
+            names = {
+                vod.get("channel_name"),
+                vod.get("channelName"),
+                vod.get("channel_display_name"),
+                vod.get("channelDisplayName"),
+                channel.get("name"),
+                channel.get("display_name"),
+                channel.get("displayName"),
+            }
+            if _normalized(channel_name) in {_normalized(name) for name in names if name}:
+                return vod
+        raise GanymedeClientError(
+            f"No Ganymede VOD found for title {title!r} and channel {channel_name!r}"
+        )
+
     async def lock_vod(self, vod_id: str, locked: bool = True) -> dict[str, Any] | None:
         return await self._request("PATCH", f"vod/{vod_id}", json={"locked": locked})
 
@@ -76,3 +114,7 @@ class GanymedeClient:
 
     async def get_ffprobe(self, vod_id: str) -> dict[str, Any] | None:
         return await self._request("GET", f"vod/{vod_id}/ffprobe")
+
+
+def _normalized(value: Any) -> str:
+    return str(value or "").strip().casefold()

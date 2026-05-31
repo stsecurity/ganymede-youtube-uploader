@@ -45,6 +45,28 @@ The `TRACKED_TWITCH_CHANNEL` field is only a label/config value for this uploade
 
 Settings supplied by Docker or the process environment can take effect only after the service is restarted. Settings saved in the UI are used as SQLite overrides for new job processing where possible.
 
+## Ganymede Webhook
+
+Ganymede's notification screen only provides a webhook URL and message template. You can keep the default message:
+
+```text
+✅ Video Archived: {{vod_title}} by {{channel_display_name}}.
+```
+
+Set the webhook URL to include the uploader secret in the URL:
+
+```text
+http://uploader:8000/webhooks/ganymede/<APP_WEBHOOK_SECRET>
+```
+
+or:
+
+```text
+http://uploader:8000/webhooks/ganymede?secret=<APP_WEBHOOK_SECRET>
+```
+
+The uploader parses the title and channel name from the message, checks the channel against `TRACKED_TWITCH_CHANNEL` when set, then asks Ganymede's API for the matching VOD record before starting the upload workflow. This does not monitor Twitch and does not call Twitch APIs.
+
 ## CLI
 
 ```bash
@@ -62,6 +84,7 @@ Ganymede API paths vary by version. All path construction is isolated in `ganyme
 
 - `GET /vod/{id}`
 - `GET /vod?external_id={external_id}`
+- `GET /vod?title={title}&channel_name={channel_name}&limit=25`
 - `PATCH /vod/{id}` with `{"locked": true}`
 - `DELETE /vod/{id}?delete_files=true`
 - `GET /vod/{id}/ffprobe`

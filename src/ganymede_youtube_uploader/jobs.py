@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,10 @@ from .path_resolver import GanymedePathResolver
 from .youtube_client import YouTubeClient, parse_recording_date
 
 LOGGER = logging.getLogger(__name__)
+GANYMEDE_ARCHIVE_MESSAGE_RE = re.compile(
+    r"Video Archived:\s*(?P<title>.+)\s+by\s+(?P<channel>.+?)\s*\.?\s*$",
+    re.IGNORECASE,
+)
 
 
 TERMINAL_RETRYABLE = {
@@ -49,6 +54,44 @@ def extract_webhook_ids(payload: dict[str, Any]) -> tuple[str | None, str | None
         str(external_id) if external_id else None,
         title,
     )
+
+
+def extract_ganymede_archive_message(
+    payload: dict[str, Any] | str,
+) -> tuple[str | None, str | None]:
+    message = payload if isinstance(payload, str) else find_message_text(payload)
+    if not message:
+        return None, None
+    match = GANYMEDE_ARCHIVE_MESSAGE_RE.search(message)
+    if not match:
+        return None, None
+    return match.group("title").strip(), match.group("channel").strip()
+
+
+def find_message_text(payload: dict[str, Any]) -> str | None:
+    for key in ("message", "content", "text", "description"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value
+    embeds = payload.get("embeds")
+    if isinstance(embeds, list):
+        for embed in embeds:
+            if not isinstance(embed, dict):
+                continue
+            text = find_message_text(embed)
+            if text:
+                return text
+    return None
+
+
+def channel_matches_tracked(channel_name: str | None, tracked_channel: str) -> bool:
+    if not tracked_channel:
+        return True
+    return normalized_name(channel_name) == normalized_name(tracked_channel)
+
+
+def normalized_name(value: str | None) -> str:
+    return (value or "").strip().casefold()
 
 
 def create_or_update_job(
