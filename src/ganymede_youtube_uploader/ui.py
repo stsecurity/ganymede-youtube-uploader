@@ -24,7 +24,9 @@ from .ui_auth import (
 from .ui_settings import (
     BOOLEAN_FIELDS,
     SECRET_FIELDS,
+    SELECT_FIELDS,
     SETTING_FIELDS,
+    SETTING_LABELS,
     build_effective_settings,
     current_ui_settings,
     update_ui_settings,
@@ -352,13 +354,23 @@ def settings_section(session: Session, settings: Settings) -> str:
 
 
 def setting_field(key: str, value: str) -> str:
-    label = key.replace("_", " ").title()
+    label = SETTING_LABELS.get(key, key.replace("_", " ").title())
     if key in BOOLEAN_FIELDS:
         checked = "checked" if value.lower() in {"1", "true", "on", "yes"} else ""
         return f"""
 <label class="check">
   <input name="{key}" type="checkbox" value="true" {checked}>
   <span>{escape(label)}</span>
+</label>"""
+    if key in SELECT_FIELDS:
+        options = "\n".join(
+            select_option(option_value, option_label, value)
+            for option_value, option_label in SELECT_FIELDS[key]
+        )
+        return f"""
+<label>
+  <span>{escape(label)}</span>
+  <select name="{key}">{options}</select>
 </label>"""
     input_type = "password" if key in SECRET_FIELDS else "text"
     rendered_value = "" if key in SECRET_FIELDS and value else escape(value)
@@ -368,6 +380,11 @@ def setting_field(key: str, value: str) -> str:
   <span>{escape(label)}</span>
   <input name="{key}" type="{input_type}" value="{rendered_value}" placeholder="{placeholder}">
 </label>"""
+
+
+def select_option(option_value: str, option_label: str, current_value: str) -> str:
+    selected = "selected" if option_value == current_value else ""
+    return f'<option value="{escape(option_value)}" {selected}>{escape(option_label)}</option>'
 
 
 CSS = """
@@ -498,7 +515,7 @@ button.mini { padding: 7px 10px; }
   gap: 12px;
 }
 label { min-width: 0; }
-input {
+input, select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -507,6 +524,7 @@ input {
   color: var(--text);
   font: inherit;
 }
+select { appearance: auto; }
 .check {
   display: flex;
   align-items: center;

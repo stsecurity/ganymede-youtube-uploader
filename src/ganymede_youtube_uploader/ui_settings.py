@@ -44,6 +44,41 @@ INTEGER_FIELDS = {
     "YOUTUBE_VERIFY_INTERVAL_SECONDS",
     "DURATION_TOLERANCE_SECONDS",
 }
+SETTING_LABELS = {
+    "YOUTUBE_CATEGORY_ID": "Youtube Category",
+}
+PRIVACY_OPTIONS = [
+    ("private", "Private"),
+    ("unlisted", "Unlisted"),
+    ("public", "Public"),
+]
+YOUTUBE_CATEGORY_OPTIONS = [
+    ("1", "Film & Animation"),
+    ("2", "Autos & Vehicles"),
+    ("10", "Music"),
+    ("15", "Pets & Animals"),
+    ("17", "Sports"),
+    ("19", "Travel & Events"),
+    ("20", "Gaming"),
+    ("22", "People & Blogs"),
+    ("23", "Comedy"),
+    ("24", "Entertainment"),
+    ("25", "News & Politics"),
+    ("26", "Howto & Style"),
+    ("27", "Education"),
+    ("28", "Science & Technology"),
+    ("29", "Nonprofits & Activism"),
+]
+SELECT_FIELDS = {
+    "YOUTUBE_DEFAULT_PRIVACY": PRIVACY_OPTIONS,
+    "YOUTUBE_FINAL_PRIVACY": [("", "No change after verification"), *PRIVACY_OPTIONS],
+    "YOUTUBE_CATEGORY_ID": YOUTUBE_CATEGORY_OPTIONS,
+}
+SELECT_DEFAULTS = {
+    "YOUTUBE_DEFAULT_PRIVACY": "private",
+    "YOUTUBE_FINAL_PRIVACY": "",
+    "YOUTUBE_CATEGORY_ID": "20",
+}
 
 
 def env_to_attr(key: str) -> str:
@@ -84,6 +119,9 @@ def normalize_setting_value(key: str, value: str) -> str:
     value = value.strip()
     if key in BOOLEAN_FIELDS:
         return "true" if value.lower() in {"1", "true", "on", "yes"} else "false"
+    if key in SELECT_FIELDS:
+        allowed_values = {option_value for option_value, _ in SELECT_FIELDS[key]}
+        return value if value in allowed_values else SELECT_DEFAULTS[key]
     return value
 
 

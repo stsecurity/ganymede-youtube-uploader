@@ -180,9 +180,26 @@ class YouTubeClient:
         ).execute()
 
 
-def oauth_interactive(client_secret_file: Path, token_file: Path) -> None:
+def oauth_interactive(
+    client_secret_file: Path,
+    token_file: Path,
+    port: int = 8080,
+    open_browser: bool = False,
+    redirect_host: str = "localhost",
+    timeout_seconds: int = 600,
+) -> None:
     flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_file), SCOPES)
-    creds = flow.run_local_server(port=0)
+    creds = flow.run_local_server(
+        host=redirect_host,
+        bind_addr="0.0.0.0",
+        port=port,
+        open_browser=open_browser,
+        timeout_seconds=timeout_seconds,
+        authorization_prompt_message=(
+            "Open this URL in your browser, approve access, then return here:\n{url}\n"
+        ),
+        success_message="YouTube OAuth succeeded. You can close this browser tab.",
+    )
     token_file.parent.mkdir(parents=True, exist_ok=True)
     token_file.write_text(creds.to_json(), encoding="utf-8")
 
