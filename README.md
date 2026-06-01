@@ -45,6 +45,11 @@ The `TRACKED_TWITCH_CHANNEL` field is only a label/config value for this uploade
 
 Settings supplied by Docker or the process environment can take effect only after the service is restarted. Settings saved in the UI are used as SQLite overrides for new job processing where possible.
 
+YouTube upload metadata can be adjusted in settings:
+
+- `Youtube Title` chooses the upload title source: webhook/Ganymede title, Ganymede VOD title, Ganymede VOD ID, or upload job ID.
+- `YOUTUBE_DESCRIPTION` sets the upload description text.
+
 ## Ganymede Webhook
 
 Ganymede's notification screen only provides a webhook URL and message template. You can keep the default message:

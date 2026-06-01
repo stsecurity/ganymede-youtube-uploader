@@ -108,6 +108,8 @@ def test_youtube_settings_render_as_dropdowns_and_save(
     assert '<select name="YOUTUBE_DEFAULT_PRIVACY">' in dashboard.text
     assert '<select name="YOUTUBE_FINAL_PRIVACY">' in dashboard.text
     assert '<select name="YOUTUBE_CATEGORY_ID">' in dashboard.text
+    assert '<select name="YOUTUBE_TITLE_OPTION">' in dashboard.text
+    assert "Youtube Title" in dashboard.text
     assert "Youtube Category" in dashboard.text
     assert "Gaming" in dashboard.text
 
@@ -117,6 +119,8 @@ def test_youtube_settings_render_as_dropdowns_and_save(
             "YOUTUBE_DEFAULT_PRIVACY": "unlisted",
             "YOUTUBE_FINAL_PRIVACY": "public",
             "YOUTUBE_CATEGORY_ID": "24",
+            "YOUTUBE_TITLE_OPTION": "2",
+            "YOUTUBE_DESCRIPTION": "Custom upload description.",
         },
         follow_redirects=False,
     )
@@ -126,3 +130,5 @@ def test_youtube_settings_render_as_dropdowns_and_save(
     assert "YOUTUBE_DEFAULT_PRIVACY=unlisted" in env_text
     assert "YOUTUBE_FINAL_PRIVACY=public" in env_text
     assert "YOUTUBE_CATEGORY_ID=24" in env_text
+    assert "YOUTUBE_TITLE_OPTION=2" in env_text
+    assert "YOUTUBE_DESCRIPTION=Custom upload description." in env_text

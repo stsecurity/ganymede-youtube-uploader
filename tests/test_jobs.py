@@ -48,9 +48,11 @@ class FakeGanymede:
 class FakeYouTube:
     def __init__(self) -> None:
         self.uploads = 0
+        self.last_upload: dict[str, Any] = {}
 
     def upload_video(self, *args: Any, **kwargs: Any) -> str:
         self.uploads += 1
+        self.last_upload = kwargs
         return "yt-1"
 
     def wait_until_processed(self, *args: Any, **kwargs: Any) -> YouTubeVerification:
@@ -122,3 +124,25 @@ async def test_retry_does_not_reupload_when_video_id_exists(session, tmp_path: P
     assert result.status == JobStatus.COMPLETED
     assert fake_youtube.uploads == 0
     assert fake_ganymede.deleted == [("vod-1", True)]
+
+
+@pytest.mark.asyncio
+async def test_youtube_title_option_and_description_are_used(session, tmp_path: Path) -> None:
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"video")
+    fake_ganymede = FakeGanymede(tmp_path)
+    fake_ganymede.vod["title"] = "Ganymede Record Title"
+    fake_youtube = FakeYouTube()
+    configured = settings(tmp_path).model_copy(
+        update={
+            "youtube_title_option": "2",
+            "youtube_description": "Configured upload description.",
+        }
+    )
+    processor = JobProcessor(configured, fake_ganymede, fake_youtube)
+    job = create_or_update_job(session, ganymede_vod_id="vod-1", title="Webhook Title")
+
+    await processor.process(session, job)
+
+    assert fake_youtube.last_upload["title"] == "Ganymede Record Title"
+    assert fake_youtube.last_upload["description"] == "Configured upload description."

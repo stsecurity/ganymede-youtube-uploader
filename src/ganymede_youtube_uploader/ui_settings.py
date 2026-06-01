@@ -17,6 +17,8 @@ SETTING_FIELDS = [
     "GANYMEDE_VIDEOS_ROOT_IN_GANYMEDE",
     "YOUTUBE_CLIENT_SECRET_FILE",
     "YOUTUBE_TOKEN_FILE",
+    "YOUTUBE_TITLE_OPTION",
+    "YOUTUBE_DESCRIPTION",
     "YOUTUBE_DEFAULT_PRIVACY",
     "YOUTUBE_FINAL_PRIVACY",
     "YOUTUBE_CATEGORY_ID",
@@ -45,8 +47,15 @@ INTEGER_FIELDS = {
     "DURATION_TOLERANCE_SECONDS",
 }
 SETTING_LABELS = {
+    "YOUTUBE_TITLE_OPTION": "Youtube Title",
     "YOUTUBE_CATEGORY_ID": "Youtube Category",
 }
+YOUTUBE_TITLE_OPTIONS = [
+    ("1", "1. Webhook/Ganymede title"),
+    ("2", "2. Ganymede VOD title"),
+    ("3", "3. Ganymede VOD ID"),
+    ("4", "4. Upload job ID"),
+]
 PRIVACY_OPTIONS = [
     ("private", "Private"),
     ("unlisted", "Unlisted"),
@@ -70,11 +79,13 @@ YOUTUBE_CATEGORY_OPTIONS = [
     ("29", "Nonprofits & Activism"),
 ]
 SELECT_FIELDS = {
+    "YOUTUBE_TITLE_OPTION": YOUTUBE_TITLE_OPTIONS,
     "YOUTUBE_DEFAULT_PRIVACY": PRIVACY_OPTIONS,
     "YOUTUBE_FINAL_PRIVACY": [("", "No change after verification"), *PRIVACY_OPTIONS],
     "YOUTUBE_CATEGORY_ID": YOUTUBE_CATEGORY_OPTIONS,
 }
 SELECT_DEFAULTS = {
+    "YOUTUBE_TITLE_OPTION": "1",
     "YOUTUBE_DEFAULT_PRIVACY": "private",
     "YOUTUBE_FINAL_PRIVACY": "",
     "YOUTUBE_CATEGORY_ID": "20",

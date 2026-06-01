@@ -161,6 +161,17 @@ def extract_duration(vod: dict[str, Any]) -> int | None:
         return None
 
 
+def build_youtube_title(job: UploadJob, vod: dict[str, Any], option: str) -> str:
+    ganymede_title = vod_value(vod, "title")
+    if option == "2":
+        return str(ganymede_title or job.title or f"Ganymede VOD {job.ganymede_vod_id}")
+    if option == "3":
+        return f"Ganymede VOD {job.ganymede_vod_id or job.id}"
+    if option == "4":
+        return f"Upload Job {job.id}"
+    return str(job.title or ganymede_title or f"Ganymede VOD {job.ganymede_vod_id or job.id}")
+
+
 def fail_job(session: Session, job: UploadJob, exc: Exception) -> None:
     job.status = JobStatus.FAILED
     job.last_error = str(exc)
@@ -250,8 +261,8 @@ class JobProcessor:
         session.commit()
         job.youtube_video_id = self.youtube.upload_video(
             local_path,
-            title=job.title or f"Ganymede VOD {job.id}",
-            description="Uploaded from a completed Ganymede archive.",
+            title=build_youtube_title(job, vod, self.settings.youtube_title_option),
+            description=self.settings.youtube_description,
             tags=[],
             category_id=self.settings.youtube_category_id,
             privacy_status=self.settings.youtube_default_privacy,

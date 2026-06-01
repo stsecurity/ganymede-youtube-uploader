@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     youtube_client_secret_file: Path = Path("/data/youtube_client_secret.json")
     youtube_token_file: Path = Path("/data/youtube_token.json")
+    youtube_title_option: str = "1"
+    youtube_description: str = "Uploaded from a completed Ganymede archive."
     youtube_default_privacy: str = "private"
     youtube_final_privacy: str = ""
     youtube_category_id: str = "20"
