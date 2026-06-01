@@ -9,7 +9,7 @@ class GanymedeClientError(RuntimeError):
 
 class GanymedeClient:
     def __init__(self, base_url: str, api_key: str = "", timeout: float = 30.0) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = normalize_base_url(base_url)
         self.api_key = api_key
         self.timeout = timeout
 
@@ -118,3 +118,10 @@ class GanymedeClient:
 
 def _normalized(value: Any) -> str:
     return str(value or "").strip().casefold()
+
+
+def normalize_base_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/api/v1"):
+        return normalized
+    return f"{normalized}/api/v1"

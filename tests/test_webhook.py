@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -10,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from ganymede_youtube_uploader.config import Settings, get_settings
 from ganymede_youtube_uploader.db import Base, get_db
+from ganymede_youtube_uploader.ganymede_client import GanymedeClientError
 from ganymede_youtube_uploader.jobs import (
     channel_matches_tracked,
     extract_ganymede_archive_message,
@@ -122,3 +124,27 @@ async def test_message_webhook_resolves_matching_ganymede_vod(
     assert ganymede_id == "vod-1"
     assert external_id == "ext-1"
     assert title == "My VOD"
+
+
+@pytest.mark.asyncio
+async def test_message_webhook_lookup_failure_is_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeGanymedeClient:
+        def __init__(self, base_url: str, api_key: str) -> None:
+            pass
+
+        async def find_vod_by_title_and_channel(
+            self, title: str, channel_name: str
+        ) -> dict[str, Any]:
+            raise GanymedeClientError("Ganymede endpoint not found: vod")
+
+    monkeypatch.setattr("ganymede_youtube_uploader.main.GanymedeClient", FakeGanymedeClient)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await resolve_webhook_job_fields(
+            {"content": "鉁?Video Archived: My VOD by Streamer."},
+            Settings(tracked_twitch_channel="streamer"),
+        )
+
+    assert exc_info.value.status_code == 202

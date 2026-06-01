@@ -136,7 +136,10 @@ async def resolve_webhook_job_fields(
             settings.ganymede_base_url, settings.ganymede_api_key
         ).find_vod_by_title_and_channel(message_title, message_channel)
     except GanymedeClientError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=202,
+            detail=f"Webhook accepted, but no Ganymede VOD could be resolved: {exc}",
+        ) from exc
     return (
         str(vod_value(vod, "id", "vod_id", "vodId") or ""),
         str(vod_value(vod, "external_id", "externalId", "twitch_vod_id", "twitchVodId") or "")
