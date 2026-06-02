@@ -90,7 +90,7 @@ class GanymedeClient:
         for vod in candidates:
             if _normalized(vod.get("title")) != _normalized(title):
                 continue
-            channel = vod.get("channel") if isinstance(vod.get("channel"), dict) else {}
+            channel = _channel_from_vod(vod)
             names = {
                 vod.get("channel_name"),
                 vod.get("channelName"),
@@ -118,6 +118,16 @@ class GanymedeClient:
 
 def _normalized(value: Any) -> str:
     return str(value or "").strip().casefold()
+
+
+def _channel_from_vod(vod: dict[str, Any]) -> dict[str, Any]:
+    channel = vod.get("channel")
+    if isinstance(channel, dict):
+        return channel
+    edges = vod.get("edges")
+    if isinstance(edges, dict) and isinstance(edges.get("channel"), dict):
+        return edges["channel"]
+    return {}
 
 
 def normalize_base_url(base_url: str) -> str:

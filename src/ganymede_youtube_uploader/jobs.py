@@ -225,6 +225,7 @@ class JobProcessor:
         job.twitch_external_vod_id = (
             str(
                 vod_value(vod, "external_id", "externalId", "twitch_vod_id", "twitchVodId")
+                or vod_value(vod, "ext_id", "extId")
                 or job.twitch_external_vod_id
                 or ""
             )

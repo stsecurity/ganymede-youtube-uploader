@@ -109,9 +109,9 @@ async def test_message_webhook_resolves_matching_ganymede_vod(
         ) -> dict[str, Any]:
             return {
                 "id": "vod-1",
-                "external_id": "ext-1",
+                "ext_id": "ext-1",
                 "title": title,
-                "channel": {"displayName": channel_name},
+                "edges": {"channel": {"displayName": channel_name}},
             }
 
     monkeypatch.setattr("ganymede_youtube_uploader.main.GanymedeClient", FakeGanymedeClient)

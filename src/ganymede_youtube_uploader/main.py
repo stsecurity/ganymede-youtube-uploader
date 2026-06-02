@@ -142,7 +142,18 @@ async def resolve_webhook_job_fields(
         ) from exc
     return (
         str(vod_value(vod, "id", "vod_id", "vodId") or ""),
-        str(vod_value(vod, "external_id", "externalId", "twitch_vod_id", "twitchVodId") or "")
+        str(
+            vod_value(
+                vod,
+                "external_id",
+                "externalId",
+                "twitch_vod_id",
+                "twitchVodId",
+                "ext_id",
+                "extId",
+            )
+            or ""
+        )
         or None,
         message_title,
     )
