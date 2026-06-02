@@ -68,6 +68,26 @@ class GanymedeClient:
             return data[0]
         return data
 
+    async def list_vods(
+        self,
+        channel_name: str = "",
+        limit: int = 25,
+        with_channel: bool = True,
+        with_queue: bool = True,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {
+            "with_channel": with_channel,
+            "with_queue": with_queue,
+            "limit": limit,
+        }
+        if channel_name:
+            params["channel_name"] = channel_name
+        data = await self._request("GET", "vod", params=params)
+        vods = _vod_items(data)
+        if channel_name:
+            vods = [vod for vod in vods if _vod_matches_channel(vod, channel_name)]
+        return vods[:limit]
+
     async def find_vod_by_title_and_channel(
         self,
         title: str,
@@ -86,21 +106,11 @@ class GanymedeClient:
                 "limit": 25,
             },
         )
-        candidates = data if isinstance(data, list) else data.get("items", data.get("data", []))
+        candidates = _vod_items(data)
         for vod in candidates:
             if _normalized(vod.get("title")) != _normalized(title):
                 continue
-            channel = _channel_from_vod(vod)
-            names = {
-                vod.get("channel_name"),
-                vod.get("channelName"),
-                vod.get("channel_display_name"),
-                vod.get("channelDisplayName"),
-                channel.get("name"),
-                channel.get("display_name"),
-                channel.get("displayName"),
-            }
-            if _normalized(channel_name) in {_normalized(name) for name in names if name}:
+            if _vod_matches_channel(vod, channel_name):
                 return vod
         raise GanymedeClientError(
             f"No Ganymede VOD found for title {title!r} and channel {channel_name!r}"
@@ -118,6 +128,29 @@ class GanymedeClient:
 
 def _normalized(value: Any) -> str:
     return str(value or "").strip().casefold()
+
+
+def _vod_items(data: Any) -> list[dict[str, Any]]:
+    if isinstance(data, list):
+        return [vod for vod in data if isinstance(vod, dict)]
+    if not isinstance(data, dict):
+        return []
+    items = data.get("items", data.get("data", []))
+    return [vod for vod in items if isinstance(vod, dict)] if isinstance(items, list) else []
+
+
+def _vod_matches_channel(vod: dict[str, Any], channel_name: str) -> bool:
+    channel = _channel_from_vod(vod)
+    names = {
+        vod.get("channel_name"),
+        vod.get("channelName"),
+        vod.get("channel_display_name"),
+        vod.get("channelDisplayName"),
+        channel.get("name"),
+        channel.get("display_name"),
+        channel.get("displayName"),
+    }
+    return _normalized(channel_name) in {_normalized(name) for name in names if name}
 
 
 def _channel_from_vod(vod: dict[str, Any]) -> dict[str, Any]:

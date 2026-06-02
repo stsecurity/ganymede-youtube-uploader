@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 from html import escape
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import parse_qs
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import Settings, get_settings
-from .db import get_db
-from .jobs import JobProcessor
+from .db import SessionLocal, get_db
+from .ganymede_client import GanymedeClient, GanymedeClientError
+from .jobs import JobProcessor, create_or_update_job, vod_value
 from .models import JobStatus, UploadJob
 from .ui_auth import (
     SESSION_COOKIE,
@@ -212,6 +213,64 @@ async def ui_retry_job(
     return redirect("/ui")
 
 
+@router.post("/ui/check-new-vod")
+async def ui_check_new_vod(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: DBSession,
+    settings: AppSettings,
+) -> RedirectResponse:
+    auth = require_admin(request, session, settings)
+    if isinstance(auth, RedirectResponse):
+        return auth
+    effective_settings = build_effective_settings(session)
+    if not effective_settings.tracked_twitch_channel:
+        return redirect("/ui?check=missing_channel")
+    try:
+        vods = await GanymedeClient(
+            effective_settings.ganymede_base_url,
+            effective_settings.ganymede_api_key,
+        ).list_vods(channel_name=effective_settings.tracked_twitch_channel, limit=25)
+    except GanymedeClientError:
+        return redirect("/ui?check=ganymede_error")
+    if not vods:
+        return redirect("/ui?check=no_vod")
+    vod = newest_vod(vods)
+    ganymede_vod_id = str(vod_value(vod, "id", "vod_id", "vodId") or "") or None
+    external_id = str(vod_value(vod, "external_id", "externalId", "ext_id", "extId") or "") or None
+    if not ganymede_vod_id and not external_id:
+        return redirect("/ui?check=no_vod_id")
+    job = create_or_update_job(
+        session,
+        ganymede_vod_id=ganymede_vod_id,
+        external_id=external_id,
+        title=vod_value(vod, "title"),
+    )
+    if job.status not in {JobStatus.COMPLETED, JobStatus.UPLOADING}:
+        background_tasks.add_task(process_ui_job_background, job.id)
+    return redirect("/ui?check=queued")
+
+
+async def process_ui_job_background(job_id: int) -> None:
+    session = SessionLocal()
+    try:
+        job = session.get(UploadJob, job_id)
+        if job:
+            await JobProcessor(build_effective_settings(session)).process(session, job)
+    finally:
+        session.close()
+
+
+def newest_vod(vods: list[dict[str, Any]]) -> dict[str, Any]:
+    return max(
+        vods,
+        key=lambda vod: str(
+            vod_value(vod, "created_at", "createdAt", "updated_at", "updatedAt", "streamed_at")
+            or ""
+        ),
+    )
+
+
 def auth_page(
     title: str,
     intro: str,
@@ -349,6 +408,10 @@ def settings_section(session: Session, settings: Settings) -> str:
       <p>Changing database paths or Docker-provided env vars may require a service restart.</p>
       <button type="submit">Save settings</button>
     </div>
+  </form>
+  <form method="post" action="/ui/check-new-vod" class="manual-action">
+    <p>Check Ganymede now for the newest VOD from the tracked channel.</p>
+    <button type="submit" class="secondary">Check for new VOD now</button>
   </form>
 </section>"""
 
@@ -509,6 +572,11 @@ button {
 button:hover { background: #7f35f0; }
 button.ghost, button.mini { background: var(--panel-2); border: 1px solid var(--line); }
 button.mini { padding: 7px 10px; }
+button.secondary {
+  background: var(--panel-2);
+  border: 1px solid var(--accent);
+  color: var(--accent-2);
+}
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -542,6 +610,15 @@ select { appearance: auto; }
   border-top: 1px solid var(--line);
   padding-top: 14px;
 }
+.manual-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 14px;
+}
 .auth-shell {
   min-height: 100vh;
   display: grid;
@@ -560,7 +637,10 @@ select { appearance: auto; }
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
-  .topbar, .section-head, .form-actions { align-items: stretch; flex-direction: column; }
+  .topbar, .section-head, .form-actions, .manual-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
   .layout { padding: 12px; }
   .panel { padding: 14px; }
   .metrics, .settings-grid { grid-template-columns: 1fr; }

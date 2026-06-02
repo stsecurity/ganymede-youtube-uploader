@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -132,3 +133,59 @@ def test_youtube_settings_render_as_dropdowns_and_save(
     assert "YOUTUBE_CATEGORY_ID=24" in env_text
     assert "YOUTUBE_TITLE_OPTION=2" in env_text
     assert "YOUTUBE_DESCRIPTION=Custom upload description." in env_text
+
+
+def test_check_new_vod_button_enqueues_latest_tracked_channel_vod(
+    ui_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeGanymedeClient:
+        def __init__(self, base_url: str, api_key: str) -> None:
+            pass
+
+        async def list_vods(self, channel_name: str = "", limit: int = 25) -> list[dict[str, Any]]:
+            assert channel_name == "stsecurity"
+            return [
+                {
+                    "id": "old-vod",
+                    "ext_id": "old-ext",
+                    "title": "Older VOD",
+                    "created_at": "2026-06-01T10:00:00Z",
+                    "edges": {"channel": {"name": "stsecurity"}},
+                },
+                {
+                    "id": "new-vod",
+                    "ext_id": "new-ext",
+                    "title": "Newest VOD",
+                    "created_at": "2026-06-01T12:00:00Z",
+                    "edges": {"channel": {"name": "stsecurity"}},
+                },
+            ]
+
+    async def noop_process_ui_job_background(job_id: int) -> None:
+        return None
+
+    monkeypatch.setattr("ganymede_youtube_uploader.ui.GanymedeClient", FakeGanymedeClient)
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.ui.process_ui_job_background",
+        noop_process_ui_job_background,
+    )
+    ui_client.post(
+        "/setup",
+        data={"username": "admin", "password": "long-enough-password"},
+        follow_redirects=False,
+    )
+    ui_client.post(
+        "/ui/settings",
+        data={"TRACKED_TWITCH_CHANNEL": "stsecurity"},
+        follow_redirects=False,
+    )
+
+    dashboard = ui_client.get("/ui")
+    assert "Check for new VOD now" in dashboard.text
+
+    response = ui_client.post("/ui/check-new-vod", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/ui?check=queued"
+    dashboard = ui_client.get("/ui")
+    assert "Newest VOD" in dashboard.text
