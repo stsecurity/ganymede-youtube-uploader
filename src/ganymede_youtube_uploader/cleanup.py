@@ -2,9 +2,17 @@ from .ganymede_client import GanymedeClient, GanymedeClientError
 from .models import JobStatus, UploadJob
 
 
-async def cleanup_ganymede(job: UploadJob, client: GanymedeClient) -> JobStatus:
+async def cleanup_ganymede(
+    job: UploadJob,
+    client: GanymedeClient,
+    *,
+    delete_after_upload: bool = False,
+) -> JobStatus:
     if job.status not in {JobStatus.VERIFIED, JobStatus.CLEANING_GANYMEDE}:
         raise ValueError("Cleanup is allowed only after YouTube verification succeeds")
+    if not delete_after_upload:
+        job.last_error = None
+        return JobStatus.COMPLETED
     if not job.ganymede_vod_id:
         raise ValueError("Cannot cleanup without a Ganymede VOD id")
     try:

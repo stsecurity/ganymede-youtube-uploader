@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     youtube_final_privacy: str = ""
     youtube_category_id: str = "20"
     youtube_notify_subscribers: bool = False
+    delete_ganymede_vod_after_youtube_upload: bool = False
 
     upload_chunk_size_mb: int = Field(default=8, ge=1)
     youtube_verify_timeout_minutes: int = Field(default=360, ge=1)

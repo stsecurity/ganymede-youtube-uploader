@@ -84,6 +84,10 @@ def settings(tmp_path: Path) -> Settings:
     )
 
 
+def settings_with_delete(tmp_path: Path) -> Settings:
+    return settings(tmp_path).model_copy(update={"delete_ganymede_vod_after_youtube_upload": True})
+
+
 def test_webhook_idempotency(session) -> None:
     first = create_or_update_job(session, ganymede_vod_id="vod-1", external_id="ext-1")
     second = create_or_update_job(session, ganymede_vod_id="vod-1", external_id="ext-1")
@@ -106,6 +110,23 @@ async def test_job_state_transition_to_completed(session, tmp_path: Path) -> Non
     assert result.status == JobStatus.COMPLETED
     assert result.youtube_video_id == "yt-1"
     assert fake_youtube.uploads == 1
+    assert fake_ganymede.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_job_deletes_ganymede_when_delete_after_upload_enabled(
+    session, tmp_path: Path
+) -> None:
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"video")
+    fake_ganymede = FakeGanymede(tmp_path)
+    fake_youtube = FakeYouTube()
+    processor = JobProcessor(settings_with_delete(tmp_path), fake_ganymede, fake_youtube)
+    job = create_or_update_job(session, ganymede_vod_id="vod-1")
+
+    result = await processor.process(session, job)
+
+    assert result.status == JobStatus.COMPLETED
     assert fake_ganymede.deleted == [("vod-1", True)]
 
 
@@ -139,7 +160,7 @@ async def test_cleanup_requires_verified_status(session, tmp_path: Path) -> None
 @pytest.mark.asyncio
 async def test_cleanup_failure_preserves_error(session, tmp_path: Path) -> None:
     fake_ganymede = CleanupFailingGanymede(tmp_path)
-    processor = JobProcessor(settings(tmp_path), fake_ganymede, FakeYouTube())
+    processor = JobProcessor(settings_with_delete(tmp_path), fake_ganymede, FakeYouTube())
     job = create_or_update_job(session, ganymede_vod_id="vod-1")
     job.status = JobStatus.VERIFIED
     session.commit()
@@ -154,7 +175,7 @@ async def test_cleanup_failure_preserves_error(session, tmp_path: Path) -> None:
 async def test_retry_does_not_reupload_when_video_id_exists(session, tmp_path: Path) -> None:
     fake_ganymede = FakeGanymede(tmp_path)
     fake_youtube = FakeYouTube()
-    processor = JobProcessor(settings(tmp_path), fake_ganymede, fake_youtube)
+    processor = JobProcessor(settings_with_delete(tmp_path), fake_ganymede, fake_youtube)
     job = create_or_update_job(session, ganymede_vod_id="vod-1")
     job.youtube_video_id = "yt-existing"
     job.local_duration = 120
@@ -174,7 +195,7 @@ async def test_validating_job_with_video_id_verifies_without_reupload(
 ) -> None:
     fake_ganymede = FakeGanymede(tmp_path)
     fake_youtube = FakeYouTube()
-    processor = JobProcessor(settings(tmp_path), fake_ganymede, fake_youtube)
+    processor = JobProcessor(settings_with_delete(tmp_path), fake_ganymede, fake_youtube)
     job = create_or_update_job(session, ganymede_vod_id="vod-1")
     job.youtube_video_id = "yt-existing"
     job.local_duration = 120
@@ -194,7 +215,7 @@ async def test_uploading_job_with_video_id_verifies_without_reupload(
 ) -> None:
     fake_ganymede = FakeGanymede(tmp_path)
     fake_youtube = FakeYouTube()
-    processor = JobProcessor(settings(tmp_path), fake_ganymede, fake_youtube)
+    processor = JobProcessor(settings_with_delete(tmp_path), fake_ganymede, fake_youtube)
     job = create_or_update_job(session, ganymede_vod_id="vod-1")
     job.youtube_video_id = "yt-existing"
     job.local_duration = 120
@@ -206,6 +227,22 @@ async def test_uploading_job_with_video_id_verifies_without_reupload(
     assert result.status == JobStatus.COMPLETED
     assert fake_youtube.uploads == 0
     assert fake_ganymede.deleted == [("vod-1", True)]
+
+
+@pytest.mark.asyncio
+async def test_skipped_job_is_not_processed(session, tmp_path: Path) -> None:
+    fake_ganymede = FakeGanymede(tmp_path)
+    fake_youtube = FakeYouTube()
+    processor = JobProcessor(settings_with_delete(tmp_path), fake_ganymede, fake_youtube)
+    job = create_or_update_job(session, ganymede_vod_id="vod-1")
+    job.status = JobStatus.SKIPPED
+    session.commit()
+
+    result = await processor.process(session, job)
+
+    assert result.status == JobStatus.SKIPPED
+    assert fake_youtube.uploads == 0
+    assert fake_ganymede.deleted == []
 
 
 @pytest.mark.asyncio

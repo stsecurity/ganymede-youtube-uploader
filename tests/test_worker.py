@@ -9,12 +9,14 @@ def test_recover_interrupted_jobs_resumes_safe_statuses(session) -> None:
         youtube_video_id="yt-2",
         status=JobStatus.UPLOADED,
     )
-    session.add_all([received, uploaded])
+    skipped = UploadJob(ganymede_vod_id="vod-3", status=JobStatus.SKIPPED)
+    session.add_all([received, uploaded, skipped])
     session.commit()
 
     job_ids = recover_interrupted_jobs(session)
 
     assert set(job_ids) == {received.id, uploaded.id}
+    assert skipped.id not in job_ids
 
 
 def test_recover_interrupted_jobs_blocks_unsafe_upload_resume(session) -> None:

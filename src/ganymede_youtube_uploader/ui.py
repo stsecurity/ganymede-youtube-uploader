@@ -215,6 +215,24 @@ async def ui_retry_job(
     return redirect("/ui")
 
 
+@router.post("/ui/jobs/{job_id}/skip")
+async def ui_skip_job(
+    job_id: int,
+    request: Request,
+    session: DBSession,
+    settings: AppSettings,
+) -> RedirectResponse:
+    auth = require_admin(request, session, settings)
+    if isinstance(auth, RedirectResponse):
+        return auth
+    job = session.get(UploadJob, job_id)
+    if job and job.status != JobStatus.COMPLETED:
+        job.status = JobStatus.SKIPPED
+        job.last_error = "Skipped by admin"
+        session.commit()
+    return redirect("/ui")
+
+
 @router.post("/ui/check-new-vod")
 async def ui_check_new_vod(
     request: Request,
@@ -254,7 +272,7 @@ async def ui_check_new_vod(
     if not jobs:
         return redirect("/ui?check=no_vod")
     for job in jobs:
-        if job.status not in {JobStatus.COMPLETED, JobStatus.UPLOADING}:
+        if job.status not in {JobStatus.COMPLETED, JobStatus.UPLOADING, JobStatus.SKIPPED}:
             background_tasks.add_task(process_ui_job_background, job.id)
     return redirect("/ui?check=queued")
 
@@ -311,6 +329,14 @@ def status_section(session: Session, settings: Settings) -> str:
     values = current_ui_settings(session, settings)
     tracked_channel = escape(values["TRACKED_TWITCH_CHANNEL"] or "Not set")
     linked_channel = escape(values["LINKED_YOUTUBE_CHANNEL"] or "Not set")
+    delete_after_upload = values["DELETE_GANYMEDE_VOD_AFTER_YOUTUBE_UPLOAD"].lower() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+    cleanup_mode = "Delete after verified upload" if delete_after_upload else "Keep VODs"
+    completed_label = "Uploaded and deleted" if delete_after_upload else "Verified uploads"
     jobs = list(session.scalars(select(UploadJob).order_by(UploadJob.updated_at.desc()).limit(12)))
     running_job_ids = current_running_job_ids()
     running_job = session.get(UploadJob, running_job_ids[0]) if running_job_ids else None
@@ -323,6 +349,12 @@ def status_section(session: Session, settings: Settings) -> str:
     )
     failed = (
         session.scalar(select(func.count(UploadJob.id)).where(UploadJob.status == JobStatus.FAILED))
+        or 0
+    )
+    skipped = (
+        session.scalar(
+            select(func.count(UploadJob.id)).where(UploadJob.status == JobStatus.SKIPPED)
+        )
         or 0
     )
     rows = "\n".join(job_row(job) for job in jobs) or (
@@ -339,8 +371,10 @@ def status_section(session: Session, settings: Settings) -> str:
     <div><span>Tracked Twitch channel</span><strong>{tracked_channel}</strong></div>
     <div><span>Linked YouTube channel</span><strong>{linked_channel}</strong></div>
     <div><span>Total jobs</span><strong>{total}</strong></div>
-    <div><span>Uploaded and deleted</span><strong>{completed}</strong></div>
+    <div><span>{completed_label}</span><strong>{completed}</strong></div>
+    <div><span>Ganymede cleanup</span><strong>{cleanup_mode}</strong></div>
     <div><span>Failed</span><strong>{failed}</strong></div>
+    <div><span>Skipped</span><strong>{skipped}</strong></div>
   </div>
   <div class="table-wrap">
     <table>
@@ -352,15 +386,22 @@ def status_section(session: Session, settings: Settings) -> str:
 
 
 def job_row(job: UploadJob) -> str:
-    retry = ""
+    actions = []
     if job.status in {
         JobStatus.FAILED,
         JobStatus.NEEDS_MANUAL_CLEANUP,
+        JobStatus.SKIPPED,
     }:
-        retry = (
+        actions.append(
             f'<form method="post" action="/ui/jobs/{job.id}/retry">'
             '<button class="mini" type="submit">Retry</button></form>'
         )
+    if job.status not in {JobStatus.COMPLETED, JobStatus.SKIPPED}:
+        actions.append(
+            f'<form method="post" action="/ui/jobs/{job.id}/skip">'
+            '<button class="mini danger" type="submit">Skip</button></form>'
+        )
+    action_html = f'<div class="actions">{"".join(actions)}</div>' if actions else ""
     detail = escape(job.last_error or "")
     return f"""
 <tr>
@@ -369,7 +410,7 @@ def job_row(job: UploadJob) -> str:
   <td><span class="badge {escape(job.status.value)}">{escape(job.status.value)}</span></td>
   <td>{escape(job.ganymede_vod_id or "-")}</td>
   <td>{escape(job.youtube_video_id or "-")}</td>
-  <td>{retry}</td>
+  <td>{action_html}</td>
 </tr>"""
 
 
@@ -502,7 +543,7 @@ h1 { margin: 0; font-size: 22px; line-height: 1.15; letter-spacing: 0; }
 }
 .metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 10px;
   margin-bottom: 18px;
 }
@@ -540,6 +581,7 @@ td small { display: block; margin-top: 4px; overflow-wrap: anywhere; }
 .badge.completed { color: var(--ok); }
 .badge.failed, .badge.needs_manual_cleanup, .error { color: var(--danger); }
 .badge.uploading, .badge.verifying_youtube, .badge.cleaning_ganymede { color: var(--warn); }
+.badge.skipped { color: var(--muted); }
 button {
   border: 0;
   border-radius: 6px;
@@ -552,10 +594,16 @@ button {
 button:hover { background: #7f35f0; }
 button.ghost, button.mini { background: var(--panel-2); border: 1px solid var(--line); }
 button.mini { padding: 7px 10px; }
+button.mini.danger { color: var(--danger); }
 button.secondary {
   background: var(--panel-2);
   border: 1px solid var(--accent);
   color: var(--accent-2);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .settings-grid {
   display: grid;

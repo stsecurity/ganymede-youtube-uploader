@@ -22,6 +22,7 @@ class JobStatus(StrEnum):
     FAILED = "failed"
     NEEDS_MANUAL_CLEANUP = "needs_manual_cleanup"
     NEEDS_MANUAL_REVIEW = "needs_manual_review"
+    SKIPPED = "skipped"
 
 
 class UploadJob(Base):

@@ -189,7 +189,7 @@ async def enqueue_webhook_jobs(
     if not jobs:
         raise HTTPException(status_code=422, detail="Webhook did not identify a Ganymede VOD")
     for job in jobs:
-        if job.status not in {JobStatus.COMPLETED, JobStatus.UPLOADING}:
+        if job.status not in {JobStatus.COMPLETED, JobStatus.UPLOADING, JobStatus.SKIPPED}:
             background_tasks.add_task(process_job_background, job.id)
     return WebhookAccepted(
         job_id=jobs[0].id,
@@ -245,6 +245,18 @@ async def retry_job(
     return await JobProcessor(build_effective_settings(session)).process(session, job)
 
 
+@app.post("/jobs/{job_id}/skip", response_model=JobRead)
+def skip_job(job_id: int, session: DBSession) -> UploadJob:
+    job = get_job_or_404(session, job_id)
+    if job.status == JobStatus.COMPLETED:
+        raise HTTPException(status_code=409, detail="Completed jobs cannot be skipped")
+    job.status = JobStatus.SKIPPED
+    job.last_error = "Skipped by admin"
+    session.commit()
+    session.refresh(job)
+    return job
+
+
 @app.post("/jobs/{job_id}/verify", response_model=JobRead)
 async def verify_job(
     job_id: int,
@@ -252,6 +264,8 @@ async def verify_job(
     settings: AppSettings,
 ) -> UploadJob:
     job = get_job_or_404(session, job_id)
+    if job.status == JobStatus.SKIPPED:
+        raise HTTPException(status_code=409, detail="Skipped jobs cannot be verified")
     return await JobProcessor(build_effective_settings(session)).verify_and_cleanup(session, job)
 
 

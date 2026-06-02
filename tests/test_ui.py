@@ -118,6 +118,8 @@ def test_youtube_settings_render_as_dropdowns_and_save(
     assert "Youtube Title" in dashboard.text
     assert "Youtube Category" in dashboard.text
     assert "Gaming" in dashboard.text
+    assert "Delete VOD from Ganymede after successfully uploading to YouTube" in dashboard.text
+    assert "Keep VODs" in dashboard.text
 
     response = ui_client.post(
         "/ui/settings",
@@ -127,6 +129,7 @@ def test_youtube_settings_render_as_dropdowns_and_save(
             "YOUTUBE_CATEGORY_ID": "24",
             "YOUTUBE_TITLE_OPTION": "2",
             "YOUTUBE_DESCRIPTION": "Custom upload description.",
+            "DELETE_GANYMEDE_VOD_AFTER_YOUTUBE_UPLOAD": "true",
         },
         follow_redirects=False,
     )
@@ -138,6 +141,9 @@ def test_youtube_settings_render_as_dropdowns_and_save(
     assert "YOUTUBE_CATEGORY_ID=24" in env_text
     assert "YOUTUBE_TITLE_OPTION=2" in env_text
     assert "YOUTUBE_DESCRIPTION=Custom upload description." in env_text
+    assert "DELETE_GANYMEDE_VOD_AFTER_YOUTUBE_UPLOAD=true" in env_text
+    dashboard = ui_client.get("/ui")
+    assert "Delete after verified upload" in dashboard.text
 
 
 def test_check_new_vod_button_enqueues_all_tracked_channel_vods(
@@ -238,6 +244,75 @@ def test_retry_button_queues_background_job(
         assert job.last_error is None
 
 
+def test_skip_button_marks_job_skipped(ui_client: TestClient) -> None:
+    ui_client.post(
+        "/setup",
+        data={"username": "admin", "password": "long-enough-password"},
+        follow_redirects=False,
+    )
+    local = ui_client.app.state.test_sessionmaker
+    with local() as session:
+        job = UploadJob(ganymede_vod_id="vod-1", title="Skip Me", status=JobStatus.FAILED)
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    dashboard = ui_client.get("/ui")
+    assert f"/ui/jobs/{job_id}/retry" in dashboard.text
+    assert f"/ui/jobs/{job_id}/skip" in dashboard.text
+
+    response = ui_client.post(f"/ui/jobs/{job_id}/skip", follow_redirects=False)
+
+    assert response.status_code == 303
+    with local() as session:
+        job = session.get(UploadJob, job_id)
+        assert job.status == JobStatus.SKIPPED
+        assert job.last_error == "Skipped by admin"
+    dashboard = ui_client.get("/ui")
+    assert "skipped" in dashboard.text
+    assert f"/ui/jobs/{job_id}/retry" in dashboard.text
+    assert f"/ui/jobs/{job_id}/skip" not in dashboard.text
+
+
+def test_retry_reverts_skipped_status(
+    ui_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    queued: list[int] = []
+
+    def record_process_ui_job_background(job_id: int) -> None:
+        queued.append(job_id)
+
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.ui.process_ui_job_background",
+        record_process_ui_job_background,
+    )
+    ui_client.post(
+        "/setup",
+        data={"username": "admin", "password": "long-enough-password"},
+        follow_redirects=False,
+    )
+    local = ui_client.app.state.test_sessionmaker
+    with local() as session:
+        job = UploadJob(
+            ganymede_vod_id="vod-1",
+            title="Skipped",
+            status=JobStatus.SKIPPED,
+            last_error="Skipped by admin",
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    response = ui_client.post(f"/ui/jobs/{job_id}/retry", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert queued == [job_id]
+    with local() as session:
+        job = session.get(UploadJob, job_id)
+        assert job.status == JobStatus.RECEIVED
+        assert job.last_error is None
+
+
 def test_ui_background_worker_is_sync_for_threadpool() -> None:
     assert not inspect.iscoroutinefunction(process_ui_job_background)
 
@@ -300,5 +375,23 @@ def test_manual_review_jobs_cannot_retry_through_api(ui_client: TestClient) -> N
         job_id = job.id
 
     response = ui_client.post(f"/jobs/{job_id}/retry")
+
+    assert response.status_code == 409
+
+
+def test_skipped_jobs_cannot_verify_through_api(ui_client: TestClient) -> None:
+    local = ui_client.app.state.test_sessionmaker
+    with local() as session:
+        job = UploadJob(
+            ganymede_vod_id="vod-1",
+            youtube_video_id="yt-1",
+            title="Skipped",
+            status=JobStatus.SKIPPED,
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    response = ui_client.post(f"/jobs/{job_id}/verify")
 
     assert response.status_code == 409

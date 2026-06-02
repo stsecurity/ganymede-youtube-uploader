@@ -25,6 +25,7 @@ TERMINAL_RETRYABLE = {
     JobStatus.FAILED,
     JobStatus.NEEDS_MANUAL_CLEANUP,
     JobStatus.NEEDS_MANUAL_REVIEW,
+    JobStatus.SKIPPED,
 }
 
 
@@ -206,12 +207,13 @@ class JobProcessor:
         )
 
     async def process(self, session: Session, job: UploadJob) -> UploadJob:
-        if job.status == JobStatus.COMPLETED:
+        if job.status in {JobStatus.COMPLETED, JobStatus.SKIPPED}:
             return job
         if job.youtube_video_id and job.status not in {
             JobStatus.COMPLETED,
             JobStatus.NEEDS_MANUAL_CLEANUP,
             JobStatus.NEEDS_MANUAL_REVIEW,
+            JobStatus.SKIPPED,
         }:
             return await self.verify_and_cleanup(session, job)
         job.attempt_count += 1
@@ -325,6 +327,8 @@ class JobProcessor:
         return local_path, probe.duration_seconds
 
     async def verify_and_cleanup(self, session: Session, job: UploadJob) -> UploadJob:
+        if job.status == JobStatus.SKIPPED:
+            return job
         if not job.youtube_video_id:
             raise ValueError("Cannot verify without a YouTube video id")
         job.status = JobStatus.VERIFYING_YOUTUBE
@@ -348,11 +352,19 @@ class JobProcessor:
         session.commit()
         job.status = JobStatus.CLEANING_GANYMEDE
         session.commit()
-        job.status = await cleanup_ganymede(job, self.ganymede)
+        job.status = await cleanup_ganymede(
+            job,
+            self.ganymede,
+            delete_after_upload=self.settings.delete_ganymede_vod_after_youtube_upload,
+        )
         session.commit()
         return job
 
     async def cleanup_only(self, session: Session, job: UploadJob) -> UploadJob:
-        job.status = await cleanup_ganymede(job, self.ganymede)
+        job.status = await cleanup_ganymede(
+            job,
+            self.ganymede,
+            delete_after_upload=self.settings.delete_ganymede_vod_after_youtube_upload,
+        )
         session.commit()
         return job

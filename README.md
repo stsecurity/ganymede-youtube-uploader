@@ -1,6 +1,6 @@
 # ganymede-youtube-uploader
 
-Minimal FastAPI service that receives completed Ganymede VOD events, uploads the video to YouTube, verifies YouTube processing, then asks Ganymede to delete the VOD and files through the Ganymede API.
+Minimal FastAPI service that receives completed Ganymede VOD events, uploads the video to YouTube, verifies YouTube processing, and can optionally ask Ganymede to delete the VOD and files through the Ganymede API.
 
 It never monitors Twitch, calls Twitch APIs, uses browser automation, writes to the Ganymede VOD mount, or deletes VOD files directly.
 
@@ -29,6 +29,7 @@ docker compose -f docker-compose.example.yml up --build
 - `GET /jobs`
 - `GET /jobs/{job_id}`
 - `POST /jobs/{job_id}/retry`
+- `POST /jobs/{job_id}/skip`
 - `POST /jobs/{job_id}/verify`
 - `POST /jobs/{job_id}/cleanup`
 
@@ -38,7 +39,7 @@ The service includes a small admin UI at `/`.
 
 On first start it redirects to `/setup` so you can create the first admin account. After login, the dashboard has:
 
-- `Status / Log`: tracked channel label, linked YouTube channel label, job counts, current running task, recent uploads, cleanup status, and retry actions for failed jobs.
+- `Status / Log`: tracked channel label, linked YouTube channel label, job counts, current running task, recent uploads, cleanup mode, and retry/skip actions.
 - `Settings`: editable service settings. Values are stored in SQLite and mirrored to the configured `.env` file when the app can write it.
 
 The `TRACKED_TWITCH_CHANNEL` field is only a label/config value for this uploader. It does not enable Twitch monitoring and the service still does not call Twitch APIs.
@@ -53,6 +54,9 @@ YouTube upload metadata can be adjusted in settings:
 
 - `Youtube Title` chooses the upload title source: webhook/Ganymede title, Ganymede VOD title, Ganymede VOD ID, or upload job ID.
 - `YOUTUBE_DESCRIPTION` sets the upload description text.
+- `Delete VOD from Ganymede after successfully uploading to YouTube` controls whether verified uploads call Ganymede delete. It is off by default, so completed jobs keep the Ganymede VOD.
+
+Skipped jobs are marked `skipped` and are ignored by future webhook, manual check, restart recovery, upload, verification, and cleanup processing. Use `Retry` on a skipped job to put it back into the normal queue.
 
 ## Ganymede Webhook
 
