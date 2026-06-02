@@ -71,7 +71,7 @@ class GanymedeClient:
     async def list_vods(
         self,
         channel_name: str = "",
-        limit: int = 25,
+        limit: int = 100,
         with_channel: bool = True,
         with_queue: bool = True,
     ) -> list[dict[str, Any]]:
@@ -95,6 +95,26 @@ class GanymedeClient:
         with_channel: bool = True,
         with_queue: bool = True,
     ) -> dict[str, Any]:
+        matches = await self.find_vods_by_title_and_channel(
+            title,
+            channel_name,
+            with_channel=with_channel,
+            with_queue=with_queue,
+        )
+        if matches:
+            return matches[0]
+        raise GanymedeClientError(
+            f"No Ganymede VOD found for title {title!r} and channel {channel_name!r}"
+        )
+
+    async def find_vods_by_title_and_channel(
+        self,
+        title: str,
+        channel_name: str,
+        with_channel: bool = True,
+        with_queue: bool = True,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
         data = await self._request(
             "GET",
             "vod",
@@ -103,18 +123,17 @@ class GanymedeClient:
                 "channel_name": channel_name,
                 "with_channel": with_channel,
                 "with_queue": with_queue,
-                "limit": 25,
+                "limit": limit,
             },
         )
         candidates = _vod_items(data)
+        matches = []
         for vod in candidates:
             if _normalized(vod.get("title")) != _normalized(title):
                 continue
             if _vod_matches_channel(vod, channel_name):
-                return vod
-        raise GanymedeClientError(
-            f"No Ganymede VOD found for title {title!r} and channel {channel_name!r}"
-        )
+                matches.append(vod)
+        return matches
 
     async def lock_vod(self, vod_id: str, locked: bool = True) -> dict[str, Any] | None:
         return await self._request("PATCH", f"vod/{vod_id}", json={"locked": locked})

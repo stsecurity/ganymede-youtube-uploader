@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .models import JobStatus
 
@@ -26,7 +26,8 @@ class JobRead(BaseModel):
 
 
 class WebhookAccepted(BaseModel):
-    job_id: int
+    job_id: int | None = None
+    job_ids: list[int] = Field(default_factory=list)
     status: JobStatus
 
 

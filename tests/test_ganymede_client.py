@@ -50,6 +50,38 @@ async def test_find_vod_matches_edges_channel_shape() -> None:
 
 
 @pytest.mark.asyncio
+async def test_find_vods_returns_all_matching_title_and_channel_vods() -> None:
+    client = GanymedeClient("http://ganymede:4000")
+
+    async def fake_request(method: str, path: str, **kwargs):
+        return {
+            "data": [
+                {
+                    "id": "vod-1",
+                    "title": "Same Title",
+                    "edges": {"channel": {"name": "stsecurity"}},
+                },
+                {
+                    "id": "vod-2",
+                    "title": "Same Title",
+                    "edges": {"channel": {"name": "stsecurity"}},
+                },
+                {
+                    "id": "vod-3",
+                    "title": "Other Title",
+                    "edges": {"channel": {"name": "stsecurity"}},
+                },
+            ]
+        }
+
+    client._request = fake_request
+
+    vods = await client.find_vods_by_title_and_channel("Same Title", "stsecurity")
+
+    assert [vod["id"] for vod in vods] == ["vod-1", "vod-2"]
+
+
+@pytest.mark.asyncio
 async def test_list_vods_filters_edges_channel_shape() -> None:
     client = GanymedeClient("http://ganymede:4000")
 

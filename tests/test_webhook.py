@@ -104,26 +104,65 @@ async def test_message_webhook_resolves_matching_ganymede_vod(
         def __init__(self, base_url: str, api_key: str) -> None:
             pass
 
-        async def find_vod_by_title_and_channel(
+        async def find_vods_by_title_and_channel(
             self, title: str, channel_name: str
-        ) -> dict[str, Any]:
-            return {
-                "id": "vod-1",
-                "ext_id": "ext-1",
-                "title": title,
-                "edges": {"channel": {"displayName": channel_name}},
-            }
+        ) -> list[dict[str, Any]]:
+            return [
+                {
+                    "id": "vod-1",
+                    "ext_id": "ext-1",
+                    "title": title,
+                    "edges": {"channel": {"displayName": channel_name}},
+                }
+            ]
 
     monkeypatch.setattr("ganymede_youtube_uploader.main.GanymedeClient", FakeGanymedeClient)
 
-    ganymede_id, external_id, title = await resolve_webhook_job_fields(
+    vod_refs = await resolve_webhook_job_fields(
         {"content": "✅ Video Archived: My VOD by Streamer."},
         Settings(tracked_twitch_channel="streamer"),
     )
 
-    assert ganymede_id == "vod-1"
-    assert external_id == "ext-1"
-    assert title == "My VOD"
+    assert len(vod_refs) == 1
+    assert vod_refs[0].ganymede_vod_id == "vod-1"
+    assert vod_refs[0].external_id == "ext-1"
+    assert vod_refs[0].title == "My VOD"
+
+
+@pytest.mark.asyncio
+async def test_message_webhook_resolves_all_matching_ganymede_vods(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeGanymedeClient:
+        def __init__(self, base_url: str, api_key: str) -> None:
+            pass
+
+        async def find_vods_by_title_and_channel(
+            self, title: str, channel_name: str
+        ) -> list[dict[str, Any]]:
+            return [
+                {
+                    "id": "vod-1",
+                    "ext_id": "ext-1",
+                    "title": title,
+                    "edges": {"channel": {"displayName": channel_name}},
+                },
+                {
+                    "id": "vod-2",
+                    "ext_id": "ext-2",
+                    "title": title,
+                    "edges": {"channel": {"displayName": channel_name}},
+                },
+            ]
+
+    monkeypatch.setattr("ganymede_youtube_uploader.main.GanymedeClient", FakeGanymedeClient)
+
+    vod_refs = await resolve_webhook_job_fields(
+        {"content": "Video Archived: My VOD by Streamer."},
+        Settings(tracked_twitch_channel="streamer"),
+    )
+
+    assert [vod_ref.ganymede_vod_id for vod_ref in vod_refs] == ["vod-1", "vod-2"]
 
 
 @pytest.mark.asyncio
@@ -134,9 +173,9 @@ async def test_message_webhook_lookup_failure_is_accepted(
         def __init__(self, base_url: str, api_key: str) -> None:
             pass
 
-        async def find_vod_by_title_and_channel(
+        async def find_vods_by_title_and_channel(
             self, title: str, channel_name: str
-        ) -> dict[str, Any]:
+        ) -> list[dict[str, Any]]:
             raise GanymedeClientError("Ganymede endpoint not found: vod")
 
     monkeypatch.setattr("ganymede_youtube_uploader.main.GanymedeClient", FakeGanymedeClient)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from html import escape
-from typing import Annotated, Any
+from typing import Annotated
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
@@ -230,24 +230,30 @@ async def ui_check_new_vod(
         vods = await GanymedeClient(
             effective_settings.ganymede_base_url,
             effective_settings.ganymede_api_key,
-        ).list_vods(channel_name=effective_settings.tracked_twitch_channel, limit=25)
+        ).list_vods(channel_name=effective_settings.tracked_twitch_channel, limit=100)
     except GanymedeClientError:
         return redirect("/ui?check=ganymede_error")
-    if not vods:
+    jobs = []
+    for vod in vods:
+        ganymede_vod_id = str(vod_value(vod, "id", "vod_id", "vodId") or "") or None
+        external_id = (
+            str(vod_value(vod, "external_id", "externalId", "ext_id", "extId") or "") or None
+        )
+        if not ganymede_vod_id and not external_id:
+            continue
+        jobs.append(
+            create_or_update_job(
+                session,
+                ganymede_vod_id=ganymede_vod_id,
+                external_id=external_id,
+                title=vod_value(vod, "title"),
+            )
+        )
+    if not jobs:
         return redirect("/ui?check=no_vod")
-    vod = newest_vod(vods)
-    ganymede_vod_id = str(vod_value(vod, "id", "vod_id", "vodId") or "") or None
-    external_id = str(vod_value(vod, "external_id", "externalId", "ext_id", "extId") or "") or None
-    if not ganymede_vod_id and not external_id:
-        return redirect("/ui?check=no_vod_id")
-    job = create_or_update_job(
-        session,
-        ganymede_vod_id=ganymede_vod_id,
-        external_id=external_id,
-        title=vod_value(vod, "title"),
-    )
-    if job.status not in {JobStatus.COMPLETED, JobStatus.UPLOADING}:
-        background_tasks.add_task(process_ui_job_background, job.id)
+    for job in jobs:
+        if job.status not in {JobStatus.COMPLETED, JobStatus.UPLOADING}:
+            background_tasks.add_task(process_ui_job_background, job.id)
     return redirect("/ui?check=queued")
 
 
@@ -259,16 +265,6 @@ async def process_ui_job_background(job_id: int) -> None:
             await JobProcessor(build_effective_settings(session)).process(session, job)
     finally:
         session.close()
-
-
-def newest_vod(vods: list[dict[str, Any]]) -> dict[str, Any]:
-    return max(
-        vods,
-        key=lambda vod: str(
-            vod_value(vod, "created_at", "createdAt", "updated_at", "updatedAt", "streamed_at")
-            or ""
-        ),
-    )
 
 
 def auth_page(
@@ -410,8 +406,8 @@ def settings_section(session: Session, settings: Settings) -> str:
     </div>
   </form>
   <form method="post" action="/ui/check-new-vod" class="manual-action">
-    <p>Check Ganymede now for the newest VOD from the tracked channel.</p>
-    <button type="submit" class="secondary">Check for new VOD now</button>
+    <p>Check Ganymede now and queue every VOD found for the tracked channel.</p>
+    <button type="submit" class="secondary">Upload all found VODs now</button>
   </form>
 </section>"""
 

@@ -135,15 +135,16 @@ def test_youtube_settings_render_as_dropdowns_and_save(
     assert "YOUTUBE_DESCRIPTION=Custom upload description." in env_text
 
 
-def test_check_new_vod_button_enqueues_latest_tracked_channel_vod(
+def test_check_new_vod_button_enqueues_all_tracked_channel_vods(
     ui_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class FakeGanymedeClient:
         def __init__(self, base_url: str, api_key: str) -> None:
             pass
 
-        async def list_vods(self, channel_name: str = "", limit: int = 25) -> list[dict[str, Any]]:
+        async def list_vods(self, channel_name: str = "", limit: int = 100) -> list[dict[str, Any]]:
             assert channel_name == "stsecurity"
+            assert limit == 100
             return [
                 {
                     "id": "old-vod",
@@ -181,7 +182,7 @@ def test_check_new_vod_button_enqueues_latest_tracked_channel_vod(
     )
 
     dashboard = ui_client.get("/ui")
-    assert "Check for new VOD now" in dashboard.text
+    assert "Upload all found VODs now" in dashboard.text
 
     response = ui_client.post("/ui/check-new-vod", follow_redirects=False)
 
@@ -189,3 +190,4 @@ def test_check_new_vod_button_enqueues_latest_tracked_channel_vod(
     assert response.headers["location"] == "/ui?check=queued"
     dashboard = ui_client.get("/ui")
     assert "Newest VOD" in dashboard.text
+    assert "Older VOD" in dashboard.text

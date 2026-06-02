@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from typing import Annotated, Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
@@ -32,6 +33,13 @@ app = FastAPI(title="ganymede-youtube-uploader")
 DBSession = Annotated[Session, Depends(get_db)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
 WebhookSecret = Annotated[str | None, Depends(webhook_secret_header)]
+
+
+@dataclass(frozen=True)
+class WebhookVodRef:
+    ganymede_vod_id: str | None
+    external_id: str | None
+    title: str | None
 
 
 @app.on_event("startup")
@@ -95,14 +103,10 @@ async def handle_ganymede_webhook(
 ) -> WebhookAccepted:
     payload = await parse_webhook_body(request)
     effective_settings = build_effective_settings(session)
-    ganymede_vod_id, external_id, title = await resolve_webhook_job_fields(
-        payload, effective_settings
-    )
-    if not ganymede_vod_id and not external_id:
+    vod_refs = await resolve_webhook_job_fields(payload, effective_settings)
+    if not vod_refs:
         raise HTTPException(status_code=422, detail="Webhook did not identify a Ganymede VOD")
-    if not title and isinstance(payload, dict):
-        title = payload.get("title")
-    return await enqueue_webhook_job(background_tasks, session, ganymede_vod_id, external_id, title)
+    return await enqueue_webhook_jobs(background_tasks, session, vod_refs)
 
 
 async def parse_webhook_body(request: Request) -> dict[str, Any] | str:
@@ -119,30 +123,41 @@ async def parse_webhook_body(request: Request) -> dict[str, Any] | str:
 async def resolve_webhook_job_fields(
     payload: dict[str, Any] | str,
     settings: Settings,
-) -> tuple[str | None, str | None, str | None]:
+) -> list[WebhookVodRef]:
     if isinstance(payload, dict):
         ganymede_vod_id, external_id, title = extract_webhook_ids(payload)
         if ganymede_vod_id or external_id:
-            return ganymede_vod_id, external_id, title
+            return [WebhookVodRef(ganymede_vod_id, external_id, title)]
     message_title, message_channel = extract_ganymede_archive_message(payload)
     if not message_title or not message_channel:
-        return None, None, None
+        return []
     if not channel_matches_tracked(message_channel, settings.tracked_twitch_channel):
         raise HTTPException(
             status_code=202, detail="Webhook channel does not match tracked channel"
         )
     try:
-        vod = await GanymedeClient(
+        vods = await GanymedeClient(
             settings.ganymede_base_url, settings.ganymede_api_key
-        ).find_vod_by_title_and_channel(message_title, message_channel)
+        ).find_vods_by_title_and_channel(message_title, message_channel)
     except GanymedeClientError as exc:
         raise HTTPException(
             status_code=202,
             detail=f"Webhook accepted, but no Ganymede VOD could be resolved: {exc}",
         ) from exc
-    return (
-        str(vod_value(vod, "id", "vod_id", "vodId") or ""),
-        str(
+    if not vods:
+        raise HTTPException(
+            status_code=202,
+            detail="Webhook accepted, but no Ganymede VOD matched the title and channel",
+        )
+    return [vod_ref_from_ganymede_vod(vod, fallback_title=message_title) for vod in vods]
+
+
+def vod_ref_from_ganymede_vod(
+    vod: dict[str, Any], fallback_title: str | None = None
+) -> WebhookVodRef:
+    return WebhookVodRef(
+        ganymede_vod_id=str(vod_value(vod, "id", "vod_id", "vodId") or "") or None,
+        external_id=str(
             vod_value(
                 vod,
                 "external_id",
@@ -155,7 +170,36 @@ async def resolve_webhook_job_fields(
             or ""
         )
         or None,
-        message_title,
+        title=vod_value(vod, "title") or fallback_title,
+    )
+
+
+async def enqueue_webhook_jobs(
+    background_tasks: BackgroundTasks,
+    session: Session,
+    vod_refs: list[WebhookVodRef],
+) -> WebhookAccepted:
+    jobs = []
+    for vod_ref in vod_refs:
+        if not vod_ref.ganymede_vod_id and not vod_ref.external_id:
+            continue
+        jobs.append(
+            create_or_update_job(
+                session,
+                ganymede_vod_id=vod_ref.ganymede_vod_id,
+                external_id=vod_ref.external_id,
+                title=vod_ref.title,
+            )
+        )
+    if not jobs:
+        raise HTTPException(status_code=422, detail="Webhook did not identify a Ganymede VOD")
+    for job in jobs:
+        if job.status not in {JobStatus.COMPLETED, JobStatus.UPLOADING}:
+            background_tasks.add_task(process_job_background, job.id)
+    return WebhookAccepted(
+        job_id=jobs[0].id,
+        job_ids=[job.id for job in jobs],
+        status=jobs[0].status,
     )
 
 
@@ -167,17 +211,13 @@ async def enqueue_webhook_job(
     title: str | None,
 ) -> WebhookAccepted:
     try:
-        job = create_or_update_job(
+        return await enqueue_webhook_jobs(
+            background_tasks,
             session,
-            ganymede_vod_id=ganymede_vod_id,
-            external_id=external_id,
-            title=title,
+            [WebhookVodRef(ganymede_vod_id, external_id, title)],
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if job.status not in {JobStatus.COMPLETED, JobStatus.UPLOADING}:
-        background_tasks.add_task(process_job_background, job.id)
-    return WebhookAccepted(job_id=job.id, status=job.status)
 
 
 @app.get("/jobs", response_model=list[JobRead])
