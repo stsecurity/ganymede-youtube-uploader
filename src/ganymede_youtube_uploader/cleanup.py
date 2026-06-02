@@ -9,6 +9,8 @@ async def cleanup_ganymede(job: UploadJob, client: GanymedeClient) -> JobStatus:
         raise ValueError("Cannot cleanup without a Ganymede VOD id")
     try:
         await client.delete_vod(job.ganymede_vod_id, delete_files=True)
-    except GanymedeClientError:
+    except GanymedeClientError as exc:
+        job.last_error = f"Ganymede cleanup failed: {exc}"
         return JobStatus.NEEDS_MANUAL_CLEANUP
+    job.last_error = None
     return JobStatus.COMPLETED

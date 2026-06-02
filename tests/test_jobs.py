@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 
 from ganymede_youtube_uploader.config import Settings
+from ganymede_youtube_uploader.ganymede_client import GanymedeClientError
 from ganymede_youtube_uploader.jobs import JobProcessor, create_or_update_job
 from ganymede_youtube_uploader.models import JobStatus, UploadJob
 from ganymede_youtube_uploader.youtube_client import YouTubeVerification
@@ -50,6 +51,11 @@ class WrappedFakeGanymede(FakeGanymede):
         self, vod_id: str, with_channel: bool = True, with_queue: bool = True
     ) -> dict[str, Any]:
         return {"success": True, "data": self.vod | {"id": vod_id}}
+
+
+class CleanupFailingGanymede(FakeGanymede):
+    async def delete_vod(self, vod_id: str, delete_files: bool = True) -> None:
+        raise GanymedeClientError("delete endpoint failed")
 
 
 class FakeYouTube:
@@ -128,6 +134,20 @@ async def test_cleanup_requires_verified_status(session, tmp_path: Path) -> None
         await processor.cleanup_only(session, job)
 
     assert fake_ganymede.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_cleanup_failure_preserves_error(session, tmp_path: Path) -> None:
+    fake_ganymede = CleanupFailingGanymede(tmp_path)
+    processor = JobProcessor(settings(tmp_path), fake_ganymede, FakeYouTube())
+    job = create_or_update_job(session, ganymede_vod_id="vod-1")
+    job.status = JobStatus.VERIFIED
+    session.commit()
+
+    result = await processor.cleanup_only(session, job)
+
+    assert result.status == JobStatus.NEEDS_MANUAL_CLEANUP
+    assert result.last_error == "Ganymede cleanup failed: delete endpoint failed"
 
 
 @pytest.mark.asyncio

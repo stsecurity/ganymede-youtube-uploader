@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from ganymede_youtube_uploader.config import Settings, get_settings
 from ganymede_youtube_uploader.db import Base, get_db
 from ganymede_youtube_uploader.main import app
+from ganymede_youtube_uploader.models import JobStatus, UploadJob
 
 
 @pytest.fixture()
@@ -39,11 +40,13 @@ def ui_client(tmp_path: Path) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_settings] = override_settings
+    app.state.test_sessionmaker = local
     try:
         with TestClient(app) as client:
             yield client
     finally:
         app.dependency_overrides.clear()
+        del app.state.test_sessionmaker
 
 
 def test_first_start_setup_login_and_dashboard(ui_client: TestClient) -> None:
@@ -191,3 +194,43 @@ def test_check_new_vod_button_enqueues_all_tracked_channel_vods(
     dashboard = ui_client.get("/ui")
     assert "Newest VOD" in dashboard.text
     assert "Older VOD" in dashboard.text
+
+
+def test_retry_button_queues_background_job(
+    ui_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    queued: list[int] = []
+
+    async def record_process_ui_job_background(job_id: int) -> None:
+        queued.append(job_id)
+
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.ui.process_ui_job_background",
+        record_process_ui_job_background,
+    )
+    ui_client.post(
+        "/setup",
+        data={"username": "admin", "password": "long-enough-password"},
+        follow_redirects=False,
+    )
+    local = ui_client.app.state.test_sessionmaker
+    with local() as session:
+        job = UploadJob(
+            ganymede_vod_id="vod-1",
+            title="Retry Me",
+            status=JobStatus.FAILED,
+            last_error="previous failure",
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    response = ui_client.post(f"/ui/jobs/{job_id}/retry", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/ui"
+    assert queued == [job_id]
+    with local() as session:
+        job = session.get(UploadJob, job_id)
+        assert job.status == JobStatus.RECEIVED
+        assert job.last_error is None

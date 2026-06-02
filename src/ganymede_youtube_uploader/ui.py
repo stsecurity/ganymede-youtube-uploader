@@ -198,6 +198,7 @@ async def save_settings(
 async def ui_retry_job(
     job_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     session: DBSession,
     settings: AppSettings,
 ) -> RedirectResponse:
@@ -209,7 +210,7 @@ async def ui_retry_job(
         job.status = JobStatus.RECEIVED
         job.last_error = None
         session.commit()
-        await JobProcessor(build_effective_settings(session)).process(session, job)
+        background_tasks.add_task(process_ui_job_background, job.id)
     return redirect("/ui")
 
 
