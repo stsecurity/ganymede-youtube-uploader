@@ -169,6 +169,46 @@ async def test_retry_does_not_reupload_when_video_id_exists(session, tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_validating_job_with_video_id_verifies_without_reupload(
+    session, tmp_path: Path
+) -> None:
+    fake_ganymede = FakeGanymede(tmp_path)
+    fake_youtube = FakeYouTube()
+    processor = JobProcessor(settings(tmp_path), fake_ganymede, fake_youtube)
+    job = create_or_update_job(session, ganymede_vod_id="vod-1")
+    job.youtube_video_id = "yt-existing"
+    job.local_duration = 120
+    job.status = JobStatus.VALIDATING_FILE
+    session.commit()
+
+    result = await processor.process(session, job)
+
+    assert result.status == JobStatus.COMPLETED
+    assert fake_youtube.uploads == 0
+    assert fake_ganymede.deleted == [("vod-1", True)]
+
+
+@pytest.mark.asyncio
+async def test_uploading_job_with_video_id_verifies_without_reupload(
+    session, tmp_path: Path
+) -> None:
+    fake_ganymede = FakeGanymede(tmp_path)
+    fake_youtube = FakeYouTube()
+    processor = JobProcessor(settings(tmp_path), fake_ganymede, fake_youtube)
+    job = create_or_update_job(session, ganymede_vod_id="vod-1")
+    job.youtube_video_id = "yt-existing"
+    job.local_duration = 120
+    job.status = JobStatus.UPLOADING
+    session.commit()
+
+    result = await processor.process(session, job)
+
+    assert result.status == JobStatus.COMPLETED
+    assert fake_youtube.uploads == 0
+    assert fake_ganymede.deleted == [("vod-1", True)]
+
+
+@pytest.mark.asyncio
 async def test_youtube_title_option_and_description_are_used(session, tmp_path: Path) -> None:
     video = tmp_path / "video.mp4"
     video.write_bytes(b"video")

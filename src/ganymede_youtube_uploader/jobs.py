@@ -208,11 +208,10 @@ class JobProcessor:
     async def process(self, session: Session, job: UploadJob) -> UploadJob:
         if job.status == JobStatus.COMPLETED:
             return job
-        if job.youtube_video_id and job.status in {
-            JobStatus.UPLOADED,
-            JobStatus.VERIFYING_YOUTUBE,
-            JobStatus.VERIFIED,
-            JobStatus.CLEANING_GANYMEDE,
+        if job.youtube_video_id and job.status not in {
+            JobStatus.COMPLETED,
+            JobStatus.NEEDS_MANUAL_CLEANUP,
+            JobStatus.NEEDS_MANUAL_REVIEW,
         }:
             return await self.verify_and_cleanup(session, job)
         job.attempt_count += 1
@@ -263,6 +262,9 @@ class JobProcessor:
         session.commit()
 
         if job.youtube_video_id:
+            job.status = JobStatus.UPLOADED
+            session.commit()
+            await self.verify_and_cleanup(session, job)
             return
 
         job.status = JobStatus.UPLOADING
