@@ -1,3 +1,4 @@
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Annotated, Any
@@ -54,7 +55,11 @@ def get_job_or_404(session: Session, job_id: int) -> UploadJob:
     return job
 
 
-async def process_job_background(job_id: int) -> None:
+def process_job_background(job_id: int) -> None:
+    asyncio.run(process_job_background_async(job_id))
+
+
+async def process_job_background_async(job_id: int) -> None:
     from .db import SessionLocal
 
     session = SessionLocal()

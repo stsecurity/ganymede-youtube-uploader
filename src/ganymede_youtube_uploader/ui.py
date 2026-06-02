@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from html import escape
 from typing import Annotated
 from urllib.parse import parse_qs
@@ -258,7 +259,11 @@ async def ui_check_new_vod(
     return redirect("/ui?check=queued")
 
 
-async def process_ui_job_background(job_id: int) -> None:
+def process_ui_job_background(job_id: int) -> None:
+    asyncio.run(process_ui_job_background_async(job_id))
+
+
+async def process_ui_job_background_async(job_id: int) -> None:
     session = SessionLocal()
     try:
         job = session.get(UploadJob, job_id)

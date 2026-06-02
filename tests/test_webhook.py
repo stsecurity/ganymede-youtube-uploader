@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,11 @@ from ganymede_youtube_uploader.jobs import (
     channel_matches_tracked,
     extract_ganymede_archive_message,
 )
-from ganymede_youtube_uploader.main import app, resolve_webhook_job_fields
+from ganymede_youtube_uploader.main import (
+    app,
+    process_job_background,
+    resolve_webhook_job_fields,
+)
 
 
 @pytest.fixture()
@@ -80,6 +85,10 @@ def test_query_secret_allows_ganymede_webhook_without_header(webhook_client: Tes
 
     assert response.status_code == 200
     assert response.json()["job_id"] == 1
+
+
+def test_webhook_background_worker_is_sync_for_threadpool() -> None:
+    assert not inspect.iscoroutinefunction(process_job_background)
 
 
 def test_ganymede_default_message_is_parsed_without_template_changes() -> None:

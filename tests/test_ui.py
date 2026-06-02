@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from ganymede_youtube_uploader.config import Settings, get_settings
 from ganymede_youtube_uploader.db import Base, get_db
 from ganymede_youtube_uploader.main import app
 from ganymede_youtube_uploader.models import JobStatus, UploadJob
+from ganymede_youtube_uploader.ui import process_ui_job_background
 
 
 @pytest.fixture()
@@ -234,3 +236,7 @@ def test_retry_button_queues_background_job(
         job = session.get(UploadJob, job_id)
         assert job.status == JobStatus.RECEIVED
         assert job.last_error is None
+
+
+def test_ui_background_worker_is_sync_for_threadpool() -> None:
+    assert not inspect.iscoroutinefunction(process_ui_job_background)
