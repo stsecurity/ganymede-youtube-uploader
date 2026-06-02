@@ -51,7 +51,7 @@ def webhook_client(
             ui_env_file=tmp_path / ".env",
         )
 
-    async def noop_process_job_background(job_id: int) -> None:
+    def noop_process_job_background(job_id: int) -> None:
         return None
 
     monkeypatch.setattr(

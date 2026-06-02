@@ -203,7 +203,7 @@ def test_retry_button_queues_background_job(
 ) -> None:
     queued: list[int] = []
 
-    async def record_process_ui_job_background(job_id: int) -> None:
+    def record_process_ui_job_background(job_id: int) -> None:
         queued.append(job_id)
 
     monkeypatch.setattr(
@@ -240,3 +240,65 @@ def test_retry_button_queues_background_job(
 
 def test_ui_background_worker_is_sync_for_threadpool() -> None:
     assert not inspect.iscoroutinefunction(process_ui_job_background)
+
+
+def test_status_uses_live_running_job(
+    ui_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ui_client.post(
+        "/setup",
+        data={"username": "admin", "password": "long-enough-password"},
+        follow_redirects=False,
+    )
+    local = ui_client.app.state.test_sessionmaker
+    with local() as session:
+        stale = UploadJob(ganymede_vod_id="vod-stale", title="Stale", status=JobStatus.UPLOADING)
+        live = UploadJob(ganymede_vod_id="vod-live", title="Live Job", status=JobStatus.RECEIVED)
+        session.add_all([stale, live])
+        session.commit()
+        live_id = live.id
+
+    monkeypatch.setattr("ganymede_youtube_uploader.ui.current_running_job_ids", lambda: [live_id])
+
+    dashboard = ui_client.get("/ui")
+
+    assert '<span class="state">Live Job</span>' in dashboard.text
+
+
+def test_manual_review_jobs_do_not_show_retry(ui_client: TestClient) -> None:
+    ui_client.post(
+        "/setup",
+        data={"username": "admin", "password": "long-enough-password"},
+        follow_redirects=False,
+    )
+    local = ui_client.app.state.test_sessionmaker
+    with local() as session:
+        job = UploadJob(
+            ganymede_vod_id="vod-1",
+            title="Manual Review",
+            status=JobStatus.NEEDS_MANUAL_REVIEW,
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    dashboard = ui_client.get("/ui")
+
+    assert f"/ui/jobs/{job_id}/retry" not in dashboard.text
+
+
+def test_manual_review_jobs_cannot_retry_through_api(ui_client: TestClient) -> None:
+    local = ui_client.app.state.test_sessionmaker
+    with local() as session:
+        job = UploadJob(
+            ganymede_vod_id="vod-1",
+            title="Manual Review",
+            status=JobStatus.NEEDS_MANUAL_REVIEW,
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    response = ui_client.post(f"/jobs/{job_id}/retry")
+
+    assert response.status_code == 409

@@ -1,4 +1,3 @@
-import asyncio
 import json
 from dataclasses import dataclass
 from typing import Annotated, Any
@@ -28,6 +27,7 @@ from .security import (
 )
 from .ui import router as ui_router
 from .ui_settings import build_effective_settings
+from .worker import resume_jobs_after_startup, run_job_sync
 
 configure_logging()
 app = FastAPI(title="ganymede-youtube-uploader")
@@ -46,6 +46,7 @@ class WebhookVodRef:
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    resume_jobs_after_startup()
 
 
 def get_job_or_404(session: Session, job_id: int) -> UploadJob:
@@ -56,18 +57,7 @@ def get_job_or_404(session: Session, job_id: int) -> UploadJob:
 
 
 def process_job_background(job_id: int) -> None:
-    asyncio.run(process_job_background_async(job_id))
-
-
-async def process_job_background_async(job_id: int) -> None:
-    from .db import SessionLocal
-
-    session = SessionLocal()
-    try:
-        job = get_job_or_404(session, job_id)
-        await JobProcessor(build_effective_settings(session)).process(session, job)
-    finally:
-        session.close()
+    run_job_sync(job_id)
 
 
 @app.get("/health", response_model=HealthRead)
@@ -244,6 +234,11 @@ async def retry_job(
     job = get_job_or_404(session, job_id)
     if job.status == JobStatus.COMPLETED:
         raise HTTPException(status_code=409, detail="Completed jobs cannot be retried")
+    if job.status == JobStatus.NEEDS_MANUAL_REVIEW:
+        raise HTTPException(
+            status_code=409,
+            detail="Manual review jobs cannot be retried automatically",
+        )
     job.status = JobStatus.RECEIVED
     job.last_error = None
     session.commit()

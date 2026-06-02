@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from html import escape
 from typing import Annotated
 from urllib.parse import parse_qs
@@ -11,9 +10,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import Settings, get_settings
-from .db import SessionLocal, get_db
+from .db import get_db
 from .ganymede_client import GanymedeClient, GanymedeClientError
-from .jobs import JobProcessor, create_or_update_job, vod_value
+from .jobs import create_or_update_job, vod_value
 from .models import JobStatus, UploadJob
 from .ui_auth import (
     SESSION_COOKIE,
@@ -33,6 +32,7 @@ from .ui_settings import (
     current_ui_settings,
     update_ui_settings,
 )
+from .worker import current_running_job_ids, run_job_sync
 
 router = APIRouter()
 DBSession = Annotated[Session, Depends(get_db)]
@@ -207,7 +207,7 @@ async def ui_retry_job(
     if isinstance(auth, RedirectResponse):
         return auth
     job = session.get(UploadJob, job_id)
-    if job and job.status != JobStatus.COMPLETED:
+    if job and job.status not in {JobStatus.COMPLETED, JobStatus.NEEDS_MANUAL_REVIEW}:
         job.status = JobStatus.RECEIVED
         job.last_error = None
         session.commit()
@@ -260,17 +260,7 @@ async def ui_check_new_vod(
 
 
 def process_ui_job_background(job_id: int) -> None:
-    asyncio.run(process_ui_job_background_async(job_id))
-
-
-async def process_ui_job_background_async(job_id: int) -> None:
-    session = SessionLocal()
-    try:
-        job = session.get(UploadJob, job_id)
-        if job:
-            await JobProcessor(build_effective_settings(session)).process(session, job)
-    finally:
-        session.close()
+    run_job_sync(job_id)
 
 
 def auth_page(
@@ -322,19 +312,8 @@ def status_section(session: Session, settings: Settings) -> str:
     tracked_channel = escape(values["TRACKED_TWITCH_CHANNEL"] or "Not set")
     linked_channel = escape(values["LINKED_YOUTUBE_CHANNEL"] or "Not set")
     jobs = list(session.scalars(select(UploadJob).order_by(UploadJob.updated_at.desc()).limit(12)))
-    running = [
-        job
-        for job in jobs
-        if job.status
-        in {
-            JobStatus.FETCHING_GANYMEDE_METADATA,
-            JobStatus.LOCKED,
-            JobStatus.VALIDATING_FILE,
-            JobStatus.UPLOADING,
-            JobStatus.VERIFYING_YOUTUBE,
-            JobStatus.CLEANING_GANYMEDE,
-        }
-    ]
+    running_job_ids = current_running_job_ids()
+    running_job = session.get(UploadJob, running_job_ids[0]) if running_job_ids else None
     total = session.scalar(select(func.count(UploadJob.id))) or 0
     completed = (
         session.scalar(
@@ -349,7 +328,7 @@ def status_section(session: Session, settings: Settings) -> str:
     rows = "\n".join(job_row(job) for job in jobs) or (
         '<tr><td colspan="6" class="empty">No upload jobs yet.</td></tr>'
     )
-    running_text = escape(running[0].title or f"Job {running[0].id}") if running else "Idle"
+    running_text = escape(running_job.title or f"Job {running_job.id}") if running_job else "Idle"
     return f"""
 <section class="panel status-panel">
   <div class="section-head">
@@ -377,7 +356,6 @@ def job_row(job: UploadJob) -> str:
     if job.status in {
         JobStatus.FAILED,
         JobStatus.NEEDS_MANUAL_CLEANUP,
-        JobStatus.NEEDS_MANUAL_REVIEW,
     }:
         retry = (
             f'<form method="post" action="/ui/jobs/{job.id}/retry">'
