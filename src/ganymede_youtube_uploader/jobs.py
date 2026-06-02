@@ -137,6 +137,13 @@ def vod_value(vod: dict[str, Any], *keys: str) -> Any:
     return None
 
 
+def unwrap_ganymede_record(data: dict[str, Any]) -> dict[str, Any]:
+    wrapped = data.get("data")
+    if isinstance(wrapped, dict):
+        return wrapped
+    return data
+
+
 def is_ganymede_finished(vod: dict[str, Any]) -> bool:
     status = str(vod_value(vod, "status", "video_status", "videoStatus") or "").lower()
     processing = vod_value(vod, "processing", "is_processing", "isProcessing")
@@ -276,9 +283,11 @@ class JobProcessor:
 
     async def _fetch_vod(self, job: UploadJob) -> dict[str, Any]:
         if job.ganymede_vod_id:
-            return await self.ganymede.get_vod(job.ganymede_vod_id)
+            return unwrap_ganymede_record(await self.ganymede.get_vod(job.ganymede_vod_id))
         if job.twitch_external_vod_id:
-            return await self.ganymede.get_vod_by_external_id(job.twitch_external_vod_id)
+            return unwrap_ganymede_record(
+                await self.ganymede.get_vod_by_external_id(job.twitch_external_vod_id)
+            )
         raise ValueError("Job has no Ganymede or external VOD id")
 
     async def _validate_file(self, job: UploadJob, vod: dict[str, Any]) -> tuple[Path, int]:

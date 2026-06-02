@@ -50,6 +50,28 @@ async def test_find_vod_matches_edges_channel_shape() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_vod_unwraps_ganymede_data_envelope() -> None:
+    client = GanymedeClient("http://ganymede:4000")
+
+    async def fake_request(method: str, path: str, **kwargs):
+        return {
+            "success": True,
+            "data": {
+                "id": "vod-1",
+                "title": "Wrapped",
+                "video_path": "/data/videos/video.mp4",
+            },
+        }
+
+    client._request = fake_request
+
+    vod = await client.get_vod("vod-1")
+
+    assert vod["id"] == "vod-1"
+    assert vod["video_path"] == "/data/videos/video.mp4"
+
+
+@pytest.mark.asyncio
 async def test_find_vods_returns_all_matching_title_and_channel_vods() -> None:
     client = GanymedeClient("http://ganymede:4000")
 

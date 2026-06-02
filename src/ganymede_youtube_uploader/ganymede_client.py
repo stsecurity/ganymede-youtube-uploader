@@ -44,10 +44,13 @@ class GanymedeClient:
     async def get_vod(
         self, vod_id: str, with_channel: bool = True, with_queue: bool = True
     ) -> dict[str, Any]:
-        return await self._request(
-            "GET",
-            f"vod/{vod_id}",
-            params={"with_channel": with_channel, "with_queue": with_queue},
+        return _single_vod(
+            await self._request(
+                "GET",
+                f"vod/{vod_id}",
+                params={"with_channel": with_channel, "with_queue": with_queue},
+            ),
+            f"No Ganymede VOD found for id {vod_id}",
         )
 
     async def get_vod_by_external_id(
@@ -62,11 +65,7 @@ class GanymedeClient:
                 "with_queue": with_queue,
             },
         )
-        if isinstance(data, list):
-            if not data:
-                raise GanymedeClientError(f"No Ganymede VOD found for external id {external_id}")
-            return data[0]
-        return data
+        return _single_vod(data, f"No Ganymede VOD found for external id {external_id}")
 
     async def list_vods(
         self,
@@ -156,6 +155,20 @@ def _vod_items(data: Any) -> list[dict[str, Any]]:
         return []
     items = data.get("items", data.get("data", []))
     return [vod for vod in items if isinstance(vod, dict)] if isinstance(items, list) else []
+
+
+def _single_vod(data: Any, error: str) -> dict[str, Any]:
+    if isinstance(data, dict):
+        wrapped = data.get("data")
+        if isinstance(wrapped, dict):
+            return wrapped
+        if isinstance(wrapped, list) and wrapped and isinstance(wrapped[0], dict):
+            return wrapped[0]
+        if "id" in data or "video_path" in data or "videoPath" in data:
+            return data
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        return data[0]
+    raise GanymedeClientError(error)
 
 
 def _vod_matches_channel(vod: dict[str, Any], channel_name: str) -> bool:

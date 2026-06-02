@@ -45,6 +45,13 @@ class FakeGanymede:
         }
 
 
+class WrappedFakeGanymede(FakeGanymede):
+    async def get_vod(
+        self, vod_id: str, with_channel: bool = True, with_queue: bool = True
+    ) -> dict[str, Any]:
+        return {"success": True, "data": self.vod | {"id": vod_id}}
+
+
 class FakeYouTube:
     def __init__(self) -> None:
         self.uploads = 0
@@ -94,6 +101,21 @@ async def test_job_state_transition_to_completed(session, tmp_path: Path) -> Non
     assert result.youtube_video_id == "yt-1"
     assert fake_youtube.uploads == 1
     assert fake_ganymede.deleted == [("vod-1", True)]
+
+
+@pytest.mark.asyncio
+async def test_job_state_transition_handles_wrapped_ganymede_vod(session, tmp_path: Path) -> None:
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"video")
+    fake_ganymede = WrappedFakeGanymede(tmp_path)
+    fake_youtube = FakeYouTube()
+    processor = JobProcessor(settings(tmp_path), fake_ganymede, fake_youtube)
+    job = create_or_update_job(session, ganymede_vod_id="vod-1")
+
+    result = await processor.process(session, job)
+
+    assert result.status == JobStatus.COMPLETED
+    assert fake_youtube.uploads == 1
 
 
 @pytest.mark.asyncio
