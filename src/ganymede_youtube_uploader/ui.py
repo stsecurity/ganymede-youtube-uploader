@@ -14,6 +14,7 @@ from .db import get_db
 from .ganymede_client import GanymedeClient, GanymedeClientError
 from .jobs import create_or_update_job, vod_value
 from .models import JobStatus, UploadJob
+from .notifications import send_job_notification
 from .ui_auth import (
     SESSION_COOKIE,
     authenticate_admin,
@@ -230,6 +231,7 @@ async def ui_skip_job(
         job.status = JobStatus.SKIPPED
         job.last_error = "Skipped by admin"
         session.commit()
+        await send_job_notification(build_effective_settings(session), job, "skipped")
     return redirect("/ui")
 
 

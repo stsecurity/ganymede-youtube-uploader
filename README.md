@@ -58,6 +58,13 @@ YouTube upload metadata can be adjusted in settings:
 
 Skipped jobs are marked `skipped` and are ignored by future webhook, manual check, restart recovery, upload, verification, and cleanup processing. Use `Retry` on a skipped job to put it back into the normal queue.
 
+Webhook notifications can be sent to Rocket.Chat-compatible incoming webhooks:
+
+- Set `WEBHOOK_NOTIFICATIONS_ENABLED=true`.
+- Set `WEBHOOK_NOTIFICATION_URL` to the Rocket.Chat incoming webhook URL.
+
+The uploader sends best-effort JSON notifications with a `text` field when a job completes, fails, needs manual cleanup, or is skipped. Notification failures are logged and do not fail the upload job.
+
 ## Ganymede Webhook
 
 Ganymede's notification screen only provides a webhook URL and message template. You can keep the default message:

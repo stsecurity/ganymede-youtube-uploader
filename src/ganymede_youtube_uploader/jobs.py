@@ -11,6 +11,7 @@ from .config import Settings
 from .ganymede_client import GanymedeClient, GanymedeClientError
 from .media_probe import MediaProbeError, duration_within_tolerance, parse_ffprobe, run_ffprobe
 from .models import JobStatus, UploadJob
+from .notifications import send_job_notification
 from .path_resolver import GanymedePathResolver
 from .youtube_client import YouTubeClient, parse_recording_date
 
@@ -222,6 +223,7 @@ class JobProcessor:
         except Exception as exc:
             LOGGER.exception("Job %s failed", job.id)
             fail_job(session, job, exc)
+            await send_job_notification(self.settings, job, "failed")
         session.refresh(job)
         return job
 
@@ -344,6 +346,7 @@ class JobProcessor:
             job.status = JobStatus.FAILED
             job.last_error = verification.error or "YouTube verification failed"
             session.commit()
+            await send_job_notification(self.settings, job, "failed")
             return job
         if self.settings.youtube_final_privacy:
             self.youtube.update_privacy(job.youtube_video_id, self.settings.youtube_final_privacy)
@@ -358,6 +361,10 @@ class JobProcessor:
             delete_after_upload=self.settings.delete_ganymede_vod_after_youtube_upload,
         )
         session.commit()
+        if job.status == JobStatus.COMPLETED:
+            await send_job_notification(self.settings, job, "completed")
+        elif job.status == JobStatus.NEEDS_MANUAL_CLEANUP:
+            await send_job_notification(self.settings, job, "cleanup_failed")
         return job
 
     async def cleanup_only(self, session: Session, job: UploadJob) -> UploadJob:

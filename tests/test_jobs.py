@@ -265,3 +265,63 @@ async def test_youtube_title_option_and_description_are_used(session, tmp_path: 
 
     assert fake_youtube.last_upload["title"] == "Ganymede Record Title"
     assert fake_youtube.last_upload["description"] == "Configured upload description."
+
+
+@pytest.mark.asyncio
+async def test_completed_job_sends_webhook_notification(
+    session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"video")
+    sent: list[tuple[int, str]] = []
+
+    async def fake_send_notification(settings: Settings, job: UploadJob, event: str) -> None:
+        sent.append((job.id, event))
+
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.jobs.send_job_notification", fake_send_notification
+    )
+    fake_ganymede = FakeGanymede(tmp_path)
+    fake_youtube = FakeYouTube()
+    configured = settings(tmp_path).model_copy(
+        update={
+            "webhook_notifications_enabled": True,
+            "webhook_notification_url": "http://rocketchat/hooks/test",
+        }
+    )
+    processor = JobProcessor(configured, fake_ganymede, fake_youtube)
+    job = create_or_update_job(session, ganymede_vod_id="vod-1")
+
+    result = await processor.process(session, job)
+
+    assert result.status == JobStatus.COMPLETED
+    assert sent == [(job.id, "completed")]
+
+
+@pytest.mark.asyncio
+async def test_failed_job_sends_webhook_notification(
+    session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: list[tuple[int, str]] = []
+
+    async def fake_send_notification(settings: Settings, job: UploadJob, event: str) -> None:
+        sent.append((job.id, event))
+
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.jobs.send_job_notification", fake_send_notification
+    )
+    fake_ganymede = FakeGanymede(tmp_path)
+    fake_youtube = FakeYouTube()
+    configured = settings(tmp_path).model_copy(
+        update={
+            "webhook_notifications_enabled": True,
+            "webhook_notification_url": "http://rocketchat/hooks/test",
+        }
+    )
+    processor = JobProcessor(configured, fake_ganymede, fake_youtube)
+    job = create_or_update_job(session, ganymede_vod_id="vod-1")
+
+    result = await processor.process(session, job)
+
+    assert result.status == JobStatus.FAILED
+    assert sent == [(job.id, "failed")]

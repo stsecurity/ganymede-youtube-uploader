@@ -19,6 +19,7 @@ from .jobs import (
 )
 from .logging_config import configure_logging
 from .models import JobStatus, UploadJob
+from .notifications import send_job_notification
 from .schemas import HealthRead, JobRead, WebhookAccepted
 from .security import (
     verify_webhook_secret,
@@ -246,7 +247,7 @@ async def retry_job(
 
 
 @app.post("/jobs/{job_id}/skip", response_model=JobRead)
-def skip_job(job_id: int, session: DBSession) -> UploadJob:
+async def skip_job(job_id: int, session: DBSession, settings: AppSettings) -> UploadJob:
     job = get_job_or_404(session, job_id)
     if job.status == JobStatus.COMPLETED:
         raise HTTPException(status_code=409, detail="Completed jobs cannot be skipped")
@@ -254,6 +255,7 @@ def skip_job(job_id: int, session: DBSession) -> UploadJob:
     job.last_error = "Skipped by admin"
     session.commit()
     session.refresh(job)
+    await send_job_notification(build_effective_settings(session), job, "skipped")
     return job
 
 
