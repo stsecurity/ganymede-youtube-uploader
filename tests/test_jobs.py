@@ -5,7 +5,7 @@ import pytest
 
 from ganymede_youtube_uploader.config import Settings
 from ganymede_youtube_uploader.ganymede_client import GanymedeClientError
-from ganymede_youtube_uploader.jobs import JobProcessor, create_or_update_job
+from ganymede_youtube_uploader.jobs import JobProcessor, build_youtube_tags, create_or_update_job
 from ganymede_youtube_uploader.models import JobStatus, UploadJob
 from ganymede_youtube_uploader.youtube_client import YouTubeVerification
 
@@ -94,6 +94,14 @@ def test_webhook_idempotency(session) -> None:
 
     assert first.id == second.id
     assert session.query(UploadJob).count() == 1
+
+
+def test_youtube_tags_default_to_no_tags() -> None:
+    assert build_youtube_tags("none", "one,two") == []
+
+
+def test_youtube_custom_tags_parse_commas_and_newlines() -> None:
+    assert build_youtube_tags("custom", "one, two\nthree,,") == ["one", "two", "three"]
 
 
 @pytest.mark.asyncio
@@ -256,6 +264,8 @@ async def test_youtube_title_option_and_description_are_used(session, tmp_path: 
         update={
             "youtube_title_option": "2",
             "youtube_description": "Configured upload description.",
+            "youtube_tags_option": "custom",
+            "youtube_tags": "archive, vod",
         }
     )
     processor = JobProcessor(configured, fake_ganymede, fake_youtube)
@@ -265,6 +275,7 @@ async def test_youtube_title_option_and_description_are_used(session, tmp_path: 
 
     assert fake_youtube.last_upload["title"] == "Ganymede Record Title"
     assert fake_youtube.last_upload["description"] == "Configured upload description."
+    assert fake_youtube.last_upload["tags"] == ["archive", "vod"]
 
 
 @pytest.mark.asyncio

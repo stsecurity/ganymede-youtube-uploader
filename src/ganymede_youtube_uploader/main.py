@@ -3,14 +3,13 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .config import Settings, get_settings
 from .db import get_db, init_db
 from .ganymede_client import GanymedeClient, GanymedeClientError
 from .jobs import (
-    JobProcessor,
     channel_matches_tracked,
     create_or_update_job,
     extract_ganymede_archive_message,
@@ -27,8 +26,10 @@ from .security import (
     webhook_secret_header,
 )
 from .ui import router as ui_router
+from .ui_auth import has_admin_user
 from .ui_settings import build_effective_settings
-from .worker import resume_jobs_after_startup, run_job_sync
+from .worker import resume_jobs_after_startup, run_cleanup_sync, run_job_sync, run_verify_sync
+from .youtube_client import YouTubeClient, YouTubeClientError
 
 configure_logging()
 app = FastAPI(title="ganymede-youtube-uploader")
@@ -61,9 +62,44 @@ def process_job_background(job_id: int) -> None:
     run_job_sync(job_id)
 
 
+def make_youtube_client(settings: Settings) -> YouTubeClient:
+    return YouTubeClient(
+        settings.youtube_client_secret_file,
+        settings.youtube_token_file,
+        settings.upload_chunk_size_bytes,
+    )
+
+
 @app.get("/health", response_model=HealthRead)
-def health() -> HealthRead:
-    return HealthRead(status="ok")
+async def health(session: DBSession) -> HealthRead:
+    components: dict[str, str] = {}
+    try:
+        session.execute(text("select 1"))
+        components["db"] = "ok"
+    except Exception as exc:
+        components["db"] = f"error: {exc}"
+    try:
+        components["ui"] = "ok" if has_admin_user(session) else "setup_required"
+    except Exception as exc:
+        components["ui"] = f"error: {exc}"
+
+    settings = build_effective_settings(session)
+    try:
+        await GanymedeClient(settings.ganymede_base_url, settings.ganymede_api_key).healthcheck()
+        components["ganymede"] = "ok"
+    except Exception as exc:
+        components["ganymede"] = f"error: {exc}"
+    try:
+        youtube = make_youtube_client(settings)
+        youtube._credentials()
+        components["youtube"] = "ok"
+    except YouTubeClientError as exc:
+        components["youtube"] = f"error: {exc}"
+    except Exception as exc:
+        components["youtube"] = f"error: {exc}"
+
+    status = "ok" if all(value == "ok" for value in components.values()) else "degraded"
+    return HealthRead(status=status, components=components)
 
 
 @app.post("/webhooks/ganymede", response_model=WebhookAccepted)
@@ -229,6 +265,7 @@ def get_job(job_id: int, session: DBSession) -> UploadJob:
 @app.post("/jobs/{job_id}/retry", response_model=JobRead)
 async def retry_job(
     job_id: int,
+    background_tasks: BackgroundTasks,
     session: DBSession,
     settings: AppSettings,
 ) -> UploadJob:
@@ -243,7 +280,9 @@ async def retry_job(
     job.status = JobStatus.RECEIVED
     job.last_error = None
     session.commit()
-    return await JobProcessor(build_effective_settings(session)).process(session, job)
+    session.refresh(job)
+    background_tasks.add_task(process_job_background, job.id)
+    return job
 
 
 @app.post("/jobs/{job_id}/skip", response_model=JobRead)
@@ -262,25 +301,39 @@ async def skip_job(job_id: int, session: DBSession, settings: AppSettings) -> Up
 @app.post("/jobs/{job_id}/verify", response_model=JobRead)
 async def verify_job(
     job_id: int,
+    background_tasks: BackgroundTasks,
     session: DBSession,
     settings: AppSettings,
 ) -> UploadJob:
     job = get_job_or_404(session, job_id)
     if job.status == JobStatus.SKIPPED:
         raise HTTPException(status_code=409, detail="Skipped jobs cannot be verified")
-    return await JobProcessor(build_effective_settings(session)).verify_and_cleanup(session, job)
+    if not job.youtube_video_id:
+        raise HTTPException(status_code=409, detail="Verification requires a YouTube video id")
+    job.status = JobStatus.VERIFYING_YOUTUBE
+    job.last_error = None
+    session.commit()
+    session.refresh(job)
+    background_tasks.add_task(run_verify_sync, job.id)
+    return job
 
 
 @app.post("/jobs/{job_id}/cleanup", response_model=JobRead)
 async def cleanup_job(
     job_id: int,
+    background_tasks: BackgroundTasks,
     session: DBSession,
     settings: AppSettings,
 ) -> UploadJob:
     job = get_job_or_404(session, job_id)
     if job.status != JobStatus.VERIFIED:
         raise HTTPException(status_code=409, detail="Cleanup requires verified YouTube processing")
-    return await JobProcessor(build_effective_settings(session)).cleanup_only(session, job)
+    job.status = JobStatus.CLEANING_GANYMEDE
+    job.last_error = None
+    session.commit()
+    session.refresh(job)
+    background_tasks.add_task(run_cleanup_sync, job.id)
+    return job
 
 
 app.include_router(ui_router)

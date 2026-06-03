@@ -33,6 +33,10 @@ docker compose -f docker-compose.example.yml up --build
 - `POST /jobs/{job_id}/verify`
 - `POST /jobs/{job_id}/cleanup`
 
+`/health` returns component status for the database, UI setup, Ganymede API, and YouTube OAuth token readiness.
+
+The retry, verify, and cleanup API actions enqueue background work and return the updated job immediately, so long uploads or verification polling do not block the HTTP request.
+
 ## Web UI
 
 The service includes a small admin UI at `/`.
@@ -54,6 +58,7 @@ YouTube upload metadata can be adjusted in settings:
 
 - `Youtube Title` chooses the upload title source: webhook/Ganymede title, Ganymede VOD title, Ganymede VOD ID, or upload job ID.
 - `YOUTUBE_DESCRIPTION` sets the upload description text.
+- `Youtube Tags` defaults to `No tags`. Select `Custom tags` and set `YOUTUBE_TAGS` to comma- or newline-separated tags when tags should be uploaded.
 - `Delete VOD from Ganymede after successfully uploading to YouTube` controls whether verified uploads call Ganymede delete. It is off by default, so completed jobs keep the Ganymede VOD.
 
 Skipped jobs are marked `skipped` and are ignored by future webhook, manual check, restart recovery, upload, verification, and cleanup processing. Use `Retry` on a skipped job to put it back into the normal queue.
@@ -99,6 +104,8 @@ python -m ganymede_youtube_uploader.cli enqueue-external-id 987654321
 python -m ganymede_youtube_uploader.cli verify 1
 python -m ganymede_youtube_uploader.cli cleanup 1
 ```
+
+CLI commands use settings saved in SQLite first, then fall back to environment values when no UI override exists.
 
 ## Assumptions
 

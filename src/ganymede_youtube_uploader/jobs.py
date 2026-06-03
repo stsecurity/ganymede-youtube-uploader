@@ -181,6 +181,17 @@ def build_youtube_title(job: UploadJob, vod: dict[str, Any], option: str) -> str
     return str(job.title or ganymede_title or f"Ganymede VOD {job.ganymede_vod_id or job.id}")
 
 
+def build_youtube_tags(tags_option: str, tags_value: str) -> list[str]:
+    if tags_option != "custom":
+        return []
+    tags = []
+    for raw_tag in re.split(r"[\n,]", tags_value):
+        tag = raw_tag.strip()
+        if tag:
+            tags.append(tag)
+    return tags
+
+
 def fail_job(session: Session, job: UploadJob, exc: Exception) -> None:
     job.status = JobStatus.FAILED
     job.last_error = str(exc)
@@ -277,7 +288,10 @@ class JobProcessor:
             local_path,
             title=build_youtube_title(job, vod, self.settings.youtube_title_option),
             description=self.settings.youtube_description,
-            tags=[],
+            tags=build_youtube_tags(
+                self.settings.youtube_tags_option,
+                self.settings.youtube_tags,
+            ),
             category_id=self.settings.youtube_category_id,
             privacy_status=self.settings.youtube_default_privacy,
             notify_subscribers=self.settings.youtube_notify_subscribers,

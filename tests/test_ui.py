@@ -73,6 +73,70 @@ def test_first_start_setup_login_and_dashboard(ui_client: TestClient) -> None:
     assert "Settings" in dashboard.text
 
 
+def test_health_checks_components(ui_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeGanymedeClient:
+        def __init__(self, base_url: str, api_key: str) -> None:
+            pass
+
+        async def healthcheck(self) -> bool:
+            return True
+
+    class FakeYouTubeClient:
+        def _credentials(self) -> object:
+            return object()
+
+    monkeypatch.setattr("ganymede_youtube_uploader.main.GanymedeClient", FakeGanymedeClient)
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.main.make_youtube_client",
+        lambda settings: FakeYouTubeClient(),
+    )
+    ui_client.post(
+        "/setup",
+        data={"username": "admin", "password": "long-enough-password"},
+        follow_redirects=False,
+    )
+
+    response = ui_client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "components": {
+            "db": "ok",
+            "ui": "ok",
+            "ganymede": "ok",
+            "youtube": "ok",
+        },
+    }
+
+
+def test_health_reports_degraded_without_ui_setup(
+    ui_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeGanymedeClient:
+        def __init__(self, base_url: str, api_key: str) -> None:
+            pass
+
+        async def healthcheck(self) -> bool:
+            return True
+
+    class FakeYouTubeClient:
+        def _credentials(self) -> object:
+            return object()
+
+    monkeypatch.setattr("ganymede_youtube_uploader.main.GanymedeClient", FakeGanymedeClient)
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.main.make_youtube_client",
+        lambda settings: FakeYouTubeClient(),
+    )
+
+    response = ui_client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert response.json()["components"]["ui"] == "setup_required"
+
+
 def test_settings_save_updates_dashboard_and_env_file(
     ui_client: TestClient, tmp_path: Path
 ) -> None:
@@ -121,7 +185,10 @@ def test_youtube_settings_render_as_dropdowns_and_save(
     assert '<select name="YOUTUBE_FINAL_PRIVACY">' in dashboard.text
     assert '<select name="YOUTUBE_CATEGORY_ID">' in dashboard.text
     assert '<select name="YOUTUBE_TITLE_OPTION">' in dashboard.text
+    assert '<select name="YOUTUBE_TAGS_OPTION">' in dashboard.text
     assert "Youtube Title" in dashboard.text
+    assert "Youtube Tags" in dashboard.text
+    assert "No tags" in dashboard.text
     assert "Youtube Category" in dashboard.text
     assert "Gaming" in dashboard.text
     assert "Delete VOD from Ganymede after successfully uploading to YouTube" in dashboard.text
@@ -135,6 +202,8 @@ def test_youtube_settings_render_as_dropdowns_and_save(
             "YOUTUBE_CATEGORY_ID": "24",
             "YOUTUBE_TITLE_OPTION": "2",
             "YOUTUBE_DESCRIPTION": "Custom upload description.",
+            "YOUTUBE_TAGS_OPTION": "custom",
+            "YOUTUBE_TAGS": "archive, vod",
             "DELETE_GANYMEDE_VOD_AFTER_YOUTUBE_UPLOAD": "true",
         },
         follow_redirects=False,
@@ -147,6 +216,8 @@ def test_youtube_settings_render_as_dropdowns_and_save(
     assert "YOUTUBE_CATEGORY_ID=24" in env_text
     assert "YOUTUBE_TITLE_OPTION=2" in env_text
     assert "YOUTUBE_DESCRIPTION=Custom upload description." in env_text
+    assert "YOUTUBE_TAGS_OPTION=custom" in env_text
+    assert "YOUTUBE_TAGS=archive, vod" in env_text
     assert "DELETE_GANYMEDE_VOD_AFTER_YOUTUBE_UPLOAD=true" in env_text
     dashboard = ui_client.get("/ui")
     assert "Delete after verified upload" in dashboard.text
@@ -441,6 +512,88 @@ def test_manual_review_jobs_cannot_retry_through_api(ui_client: TestClient) -> N
     response = ui_client.post(f"/jobs/{job_id}/retry")
 
     assert response.status_code == 409
+
+
+def test_api_retry_queues_background_job(
+    ui_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    queued: list[int] = []
+
+    def record_process_job_background(job_id: int) -> None:
+        queued.append(job_id)
+
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.main.process_job_background",
+        record_process_job_background,
+    )
+    local = ui_client.app.state.test_sessionmaker
+    with local() as session:
+        job = UploadJob(ganymede_vod_id="vod-1", title="Retry API", status=JobStatus.FAILED)
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    response = ui_client.post(f"/jobs/{job_id}/retry")
+
+    assert response.status_code == 200
+    assert queued == [job_id]
+    assert response.json()["status"] == "received"
+
+
+def test_api_verify_queues_background_job(
+    ui_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    queued: list[int] = []
+
+    def record_run_verify_sync(job_id: int) -> None:
+        queued.append(job_id)
+
+    monkeypatch.setattr("ganymede_youtube_uploader.main.run_verify_sync", record_run_verify_sync)
+    local = ui_client.app.state.test_sessionmaker
+    with local() as session:
+        job = UploadJob(
+            ganymede_vod_id="vod-1",
+            youtube_video_id="yt-1",
+            title="Verify API",
+            status=JobStatus.UPLOADED,
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    response = ui_client.post(f"/jobs/{job_id}/verify")
+
+    assert response.status_code == 200
+    assert queued == [job_id]
+    assert response.json()["status"] == "verifying_youtube"
+
+
+def test_api_cleanup_queues_background_job(
+    ui_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    queued: list[int] = []
+
+    def record_run_cleanup_sync(job_id: int) -> None:
+        queued.append(job_id)
+
+    monkeypatch.setattr("ganymede_youtube_uploader.main.run_cleanup_sync", record_run_cleanup_sync)
+    local = ui_client.app.state.test_sessionmaker
+    with local() as session:
+        job = UploadJob(
+            ganymede_vod_id="vod-1",
+            youtube_video_id="yt-1",
+            title="Cleanup API",
+            status=JobStatus.VERIFIED,
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    response = ui_client.post(f"/jobs/{job_id}/cleanup")
+
+    assert response.status_code == 200
+    assert queued == [job_id]
+    assert response.json()["status"] == "cleaning_ganymede"
 
 
 def test_skipped_jobs_cannot_verify_through_api(ui_client: TestClient) -> None:

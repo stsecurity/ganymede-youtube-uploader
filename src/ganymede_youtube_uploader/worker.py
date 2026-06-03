@@ -33,23 +33,41 @@ def current_running_job_ids() -> list[int]:
 
 
 def run_job_sync(job_id: int) -> None:
+    run_job_mode_sync(job_id, "process")
+
+
+def run_verify_sync(job_id: int) -> None:
+    run_job_mode_sync(job_id, "verify")
+
+
+def run_cleanup_sync(job_id: int) -> None:
+    run_job_mode_sync(job_id, "cleanup")
+
+
+def run_job_mode_sync(job_id: int, mode: str) -> None:
     with _RUNNING_LOCK:
         if job_id in _RUNNING_JOB_IDS:
             return
         _RUNNING_JOB_IDS.add(job_id)
     try:
-        asyncio.run(_run_job(job_id))
+        asyncio.run(_run_job(job_id, mode))
     finally:
         with _RUNNING_LOCK:
             _RUNNING_JOB_IDS.discard(job_id)
 
 
-async def _run_job(job_id: int) -> None:
+async def _run_job(job_id: int, mode: str = "process") -> None:
     session = SessionLocal()
     try:
         job = session.get(UploadJob, job_id)
         if job:
-            await JobProcessor(build_effective_settings(session)).process(session, job)
+            processor = JobProcessor(build_effective_settings(session))
+            if mode == "verify":
+                await processor.verify_and_cleanup(session, job)
+            elif mode == "cleanup":
+                await processor.cleanup_only(session, job)
+            else:
+                await processor.process(session, job)
     finally:
         session.close()
 

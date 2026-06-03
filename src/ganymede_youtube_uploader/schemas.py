@@ -33,6 +33,7 @@ class WebhookAccepted(BaseModel):
 
 class HealthRead(BaseModel):
     status: str
+    components: dict[str, str] = Field(default_factory=dict)
 
 
 class WebhookPayload(BaseModel):

@@ -19,6 +19,8 @@ SETTING_FIELDS = [
     "YOUTUBE_TOKEN_FILE",
     "YOUTUBE_TITLE_OPTION",
     "YOUTUBE_DESCRIPTION",
+    "YOUTUBE_TAGS_OPTION",
+    "YOUTUBE_TAGS",
     "YOUTUBE_DEFAULT_PRIVACY",
     "YOUTUBE_FINAL_PRIVACY",
     "YOUTUBE_CATEGORY_ID",
@@ -60,6 +62,8 @@ SETTING_SECTIONS = [
             "YOUTUBE_TOKEN_FILE",
             "YOUTUBE_TITLE_OPTION",
             "YOUTUBE_DESCRIPTION",
+            "YOUTUBE_TAGS_OPTION",
+            "YOUTUBE_TAGS",
             "YOUTUBE_DEFAULT_PRIVACY",
             "YOUTUBE_FINAL_PRIVACY",
             "YOUTUBE_CATEGORY_ID",
@@ -103,6 +107,8 @@ INTEGER_FIELDS = {
 }
 SETTING_LABELS = {
     "YOUTUBE_TITLE_OPTION": "Youtube Title",
+    "YOUTUBE_TAGS_OPTION": "Youtube Tags",
+    "YOUTUBE_TAGS": "Youtube Custom Tags",
     "YOUTUBE_CATEGORY_ID": "Youtube Category",
     "DELETE_GANYMEDE_VOD_AFTER_YOUTUBE_UPLOAD": (
         "Delete VOD from Ganymede after successfully uploading to YouTube"
@@ -113,6 +119,10 @@ YOUTUBE_TITLE_OPTIONS = [
     ("2", "2. Ganymede VOD title"),
     ("3", "3. Ganymede VOD ID"),
     ("4", "4. Upload job ID"),
+]
+YOUTUBE_TAGS_OPTIONS = [
+    ("none", "No tags"),
+    ("custom", "Custom tags"),
 ]
 PRIVACY_OPTIONS = [
     ("private", "Private"),
@@ -138,12 +148,14 @@ YOUTUBE_CATEGORY_OPTIONS = [
 ]
 SELECT_FIELDS = {
     "YOUTUBE_TITLE_OPTION": YOUTUBE_TITLE_OPTIONS,
+    "YOUTUBE_TAGS_OPTION": YOUTUBE_TAGS_OPTIONS,
     "YOUTUBE_DEFAULT_PRIVACY": PRIVACY_OPTIONS,
     "YOUTUBE_FINAL_PRIVACY": [("", "No change after verification"), *PRIVACY_OPTIONS],
     "YOUTUBE_CATEGORY_ID": YOUTUBE_CATEGORY_OPTIONS,
 }
 SELECT_DEFAULTS = {
     "YOUTUBE_TITLE_OPTION": "1",
+    "YOUTUBE_TAGS_OPTION": "none",
     "YOUTUBE_DEFAULT_PRIVACY": "private",
     "YOUTUBE_FINAL_PRIVACY": "",
     "YOUTUBE_CATEGORY_ID": "20",

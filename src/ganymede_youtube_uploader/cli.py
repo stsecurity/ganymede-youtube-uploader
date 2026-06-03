@@ -3,10 +3,10 @@ import asyncio
 
 from sqlalchemy import select
 
-from .config import get_settings
 from .db import SessionLocal, init_db
 from .jobs import JobProcessor, create_or_update_job
 from .models import JobStatus, UploadJob
+from .ui_settings import build_effective_settings
 
 
 async def run_command(args: argparse.Namespace) -> None:
@@ -23,7 +23,7 @@ async def run_command(args: argparse.Namespace) -> None:
                     f"{job.ganymede_vod_id or '-'}\t{job.youtube_video_id or '-'}"
                 )
             return
-        processor = JobProcessor(get_settings())
+        processor = JobProcessor(build_effective_settings(session))
         if args.command == "enqueue-ganymede-vod":
             job = create_or_update_job(session, ganymede_vod_id=args.vod_id)
             await processor.process(session, job)

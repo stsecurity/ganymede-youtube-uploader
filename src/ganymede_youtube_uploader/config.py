@@ -18,12 +18,13 @@ class Settings(BaseSettings):
     ganymede_api_key: str = ""
     ganymede_videos_mount: Path = Path("/ganymede/videos")
     ganymede_videos_root_in_ganymede: str = "/data/videos"
-    allow_vod_directory_scan: bool = False
 
     youtube_client_secret_file: Path = Path("/data/youtube_client_secret.json")
     youtube_token_file: Path = Path("/data/youtube_token.json")
     youtube_title_option: str = "1"
     youtube_description: str = "Uploaded from a completed Ganymede archive."
+    youtube_tags_option: str = "none"
+    youtube_tags: str = ""
     youtube_default_privacy: str = "private"
     youtube_final_privacy: str = ""
     youtube_category_id: str = "20"
