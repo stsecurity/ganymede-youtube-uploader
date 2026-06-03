@@ -40,7 +40,7 @@ The service includes a small admin UI at `/`.
 On first start it redirects to `/setup` so you can create the first admin account. After login, the dashboard has:
 
 - `Status / Log`: tracked channel label, linked YouTube channel label, job counts, current running task, recent uploads, cleanup mode, and retry/skip actions.
-- `Settings`: editable service settings. Values are stored in SQLite and mirrored to the configured `.env` file when the app can write it.
+- `Settings`: editable service settings grouped into base, Ganymede, YouTube, uploader, and webhook sections. Values are stored in SQLite and mirrored to the configured `.env` file when the app can write it.
 
 The `TRACKED_TWITCH_CHANNEL` field is only a label/config value for this uploader. It does not enable Twitch monitoring and the service still does not call Twitch APIs.
 
@@ -64,6 +64,8 @@ Webhook notifications can be sent to Rocket.Chat-compatible incoming webhooks:
 - Set `WEBHOOK_NOTIFICATION_URL` to the Rocket.Chat incoming webhook URL.
 
 The uploader sends best-effort JSON notifications with a `text` field when a job completes, fails, needs manual cleanup, or is skipped. Notification failures are logged and do not fail the upload job.
+
+Use the `Test notification` button in the Webhook Settings section to save the current webhook values and send a sample Rocket.Chat message.
 
 ## Ganymede Webhook
 

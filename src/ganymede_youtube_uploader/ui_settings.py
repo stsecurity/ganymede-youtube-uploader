@@ -34,6 +34,59 @@ SETTING_FIELDS = [
     "WEBHOOK_NOTIFICATIONS_ENABLED",
     "WEBHOOK_NOTIFICATION_URL",
 ]
+SETTING_SECTIONS = [
+    (
+        "Base Settings",
+        [
+            "APP_BASE_URL",
+            "APP_WEBHOOK_SECRET",
+            "UI_SESSION_SECRET",
+            "DATABASE_URL",
+        ],
+    ),
+    (
+        "Ganymede Settings",
+        [
+            "GANYMEDE_BASE_URL",
+            "GANYMEDE_API_KEY",
+            "GANYMEDE_VIDEOS_MOUNT",
+            "GANYMEDE_VIDEOS_ROOT_IN_GANYMEDE",
+        ],
+    ),
+    (
+        "YouTube Settings",
+        [
+            "YOUTUBE_CLIENT_SECRET_FILE",
+            "YOUTUBE_TOKEN_FILE",
+            "YOUTUBE_TITLE_OPTION",
+            "YOUTUBE_DESCRIPTION",
+            "YOUTUBE_DEFAULT_PRIVACY",
+            "YOUTUBE_FINAL_PRIVACY",
+            "YOUTUBE_CATEGORY_ID",
+            "YOUTUBE_NOTIFY_SUBSCRIBERS",
+        ],
+    ),
+    (
+        "Uploader Settings",
+        [
+            "DELETE_GANYMEDE_VOD_AFTER_YOUTUBE_UPLOAD",
+            "UPLOAD_CHUNK_SIZE_MB",
+            "YOUTUBE_VERIFY_TIMEOUT_MINUTES",
+            "YOUTUBE_VERIFY_INTERVAL_SECONDS",
+            "DURATION_TOLERANCE_SECONDS",
+            "REQUIRE_AUDIO_STREAM",
+            "TRACKED_TWITCH_CHANNEL",
+            "LINKED_YOUTUBE_CHANNEL",
+        ],
+    ),
+    (
+        "Webhook Settings",
+        [
+            "WEBHOOK_NOTIFICATIONS_ENABLED",
+            "WEBHOOK_NOTIFICATION_URL",
+        ],
+    ),
+]
 
 SECRET_FIELDS = {"APP_WEBHOOK_SECRET", "UI_SESSION_SECRET", "GANYMEDE_API_KEY"}
 BOOLEAN_FIELDS = {

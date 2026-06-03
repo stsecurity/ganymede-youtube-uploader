@@ -4,6 +4,7 @@ from ganymede_youtube_uploader.config import Settings
 from ganymede_youtube_uploader.models import JobStatus, UploadJob
 from ganymede_youtube_uploader.notifications import (
     build_job_notification_payload,
+    build_test_notification_payload,
     send_job_notification,
 )
 
@@ -24,6 +25,12 @@ def test_build_job_notification_payload_for_rocketchat() -> None:
     assert "Job: #7" in payload["text"]
     assert "Ganymede VOD: vod-1" in payload["text"]
     assert "YouTube video: yt-1" in payload["text"]
+
+
+def test_build_test_notification_payload_for_rocketchat() -> None:
+    payload = build_test_notification_payload()
+
+    assert payload == {"text": "Ganymede YouTube Uploader test notification."}
 
 
 @pytest.mark.asyncio

@@ -111,6 +111,12 @@ def test_youtube_settings_render_as_dropdowns_and_save(
 
     dashboard = ui_client.get("/ui")
 
+    assert "Base Settings" in dashboard.text
+    assert "Ganymede Settings" in dashboard.text
+    assert "YouTube Settings" in dashboard.text
+    assert "Uploader Settings" in dashboard.text
+    assert "Webhook Settings" in dashboard.text
+    assert "Test notification" in dashboard.text
     assert '<select name="YOUTUBE_DEFAULT_PRIVACY">' in dashboard.text
     assert '<select name="YOUTUBE_FINAL_PRIVACY">' in dashboard.text
     assert '<select name="YOUTUBE_CATEGORY_ID">' in dashboard.text
@@ -144,6 +150,64 @@ def test_youtube_settings_render_as_dropdowns_and_save(
     assert "DELETE_GANYMEDE_VOD_AFTER_YOUTUBE_UPLOAD=true" in env_text
     dashboard = ui_client.get("/ui")
     assert "Delete after verified upload" in dashboard.text
+
+
+def test_webhook_test_button_saves_and_sends(
+    ui_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent_urls: list[str] = []
+
+    async def fake_send_test_notification(settings: Settings) -> bool:
+        sent_urls.append(settings.webhook_notification_url)
+        return True
+
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.ui.send_test_notification",
+        fake_send_test_notification,
+    )
+    ui_client.post(
+        "/setup",
+        data={"username": "admin", "password": "long-enough-password"},
+        follow_redirects=False,
+    )
+
+    response = ui_client.post(
+        "/ui/settings/test-webhook",
+        data={
+            "WEBHOOK_NOTIFICATIONS_ENABLED": "true",
+            "WEBHOOK_NOTIFICATION_URL": "http://rocketchat/hooks/test",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/ui?webhook_test=sent"
+    assert sent_urls == ["http://rocketchat/hooks/test"]
+    env_text = (tmp_path / ".env").read_text()
+    assert "WEBHOOK_NOTIFICATIONS_ENABLED=true" in env_text
+    assert "WEBHOOK_NOTIFICATION_URL=http://rocketchat/hooks/test" in env_text
+
+
+def test_webhook_test_button_reports_failure(
+    ui_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_send_test_notification(settings: Settings) -> bool:
+        return False
+
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.ui.send_test_notification",
+        fake_send_test_notification,
+    )
+    ui_client.post(
+        "/setup",
+        data={"username": "admin", "password": "long-enough-password"},
+        follow_redirects=False,
+    )
+
+    response = ui_client.post("/ui/settings/test-webhook", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/ui?webhook_test=failed"
 
 
 def test_check_new_vod_button_enqueues_all_tracked_channel_vods(

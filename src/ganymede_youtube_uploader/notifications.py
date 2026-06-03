@@ -36,13 +36,37 @@ def build_job_notification_payload(job: UploadJob, event: str) -> dict[str, Any]
     return {"text": build_job_notification_text(job, event)}
 
 
-async def send_job_notification(settings: Settings, job: UploadJob, event: str) -> None:
+def build_test_notification_payload() -> dict[str, Any]:
+    return {"text": "Ganymede YouTube Uploader test notification."}
+
+
+async def send_webhook_payload(
+    settings: Settings,
+    payload: dict[str, Any],
+    *,
+    job_id: int | None = None,
+) -> bool:
     if not settings.webhook_notifications_enabled or not settings.webhook_notification_url:
-        return
-    payload = build_job_notification_payload(job, event)
+        return False
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             response = await client.post(settings.webhook_notification_url, json=payload)
             response.raise_for_status()
     except Exception as exc:
-        LOGGER.warning("Webhook notification failed for job %s: %s", job.id, exc)
+        if job_id is None:
+            LOGGER.warning("Webhook notification failed: %s", exc)
+        else:
+            LOGGER.warning("Webhook notification failed for job %s: %s", job_id, exc)
+        return False
+    return True
+
+
+async def send_job_notification(settings: Settings, job: UploadJob, event: str) -> None:
+    if not settings.webhook_notifications_enabled or not settings.webhook_notification_url:
+        return
+    payload = build_job_notification_payload(job, event)
+    await send_webhook_payload(settings, payload, job_id=job.id)
+
+
+async def send_test_notification(settings: Settings) -> bool:
+    return await send_webhook_payload(settings, build_test_notification_payload())

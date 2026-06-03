@@ -14,7 +14,7 @@ from .db import get_db
 from .ganymede_client import GanymedeClient, GanymedeClientError
 from .jobs import create_or_update_job, vod_value
 from .models import JobStatus, UploadJob
-from .notifications import send_job_notification
+from .notifications import send_job_notification, send_test_notification
 from .ui_auth import (
     SESSION_COOKIE,
     authenticate_admin,
@@ -27,8 +27,8 @@ from .ui_settings import (
     BOOLEAN_FIELDS,
     SECRET_FIELDS,
     SELECT_FIELDS,
-    SETTING_FIELDS,
     SETTING_LABELS,
+    SETTING_SECTIONS,
     build_effective_settings,
     current_ui_settings,
     update_ui_settings,
@@ -194,6 +194,21 @@ async def save_settings(
         return auth
     update_ui_settings(session, await form_data(request), settings)
     return redirect("/ui?saved=1")
+
+
+@router.post("/ui/settings/test-webhook")
+async def test_webhook_settings(
+    request: Request,
+    session: DBSession,
+    settings: AppSettings,
+) -> Response:
+    auth = require_admin(request, session, settings)
+    if isinstance(auth, RedirectResponse):
+        return auth
+    update_ui_settings(session, await form_data(request), settings)
+    sent = await send_test_notification(build_effective_settings(session))
+    result = "sent" if sent else "failed"
+    return redirect(f"/ui?webhook_test={result}")
 
 
 @router.post("/ui/jobs/{job_id}/retry")
@@ -418,7 +433,7 @@ def job_row(job: UploadJob) -> str:
 
 def settings_section(session: Session, settings: Settings) -> str:
     values = current_ui_settings(session, settings)
-    fields = "\n".join(setting_field(key, values.get(key, "")) for key in SETTING_FIELDS)
+    sections = "\n".join(settings_group(title, keys, values) for title, keys in SETTING_SECTIONS)
     env_file = escape(str(settings.ui_env_file))
     return f"""
 <section class="panel settings-panel">
@@ -426,7 +441,7 @@ def settings_section(session: Session, settings: Settings) -> str:
     <div><h1>Settings</h1><p>Values are stored in SQLite and mirrored to {env_file}.</p></div>
   </div>
   <form method="post" action="/ui/settings" class="settings-grid">
-    {fields}
+    {sections}
     <div class="form-actions">
       <p>Changing database paths or Docker-provided env vars may require a service restart.</p>
       <button type="submit">Save settings</button>
@@ -437,6 +452,26 @@ def settings_section(session: Session, settings: Settings) -> str:
     <button type="submit" class="secondary">Upload all found VODs now</button>
   </form>
 </section>"""
+
+
+def settings_group(title: str, keys: list[str], values: dict[str, str]) -> str:
+    fields = "\n".join(setting_field(key, values.get(key, "")) for key in keys)
+    test_button = ""
+    if title == "Webhook Settings":
+        test_button = (
+            '<button type="submit" class="secondary mini" '
+            'formaction="/ui/settings/test-webhook">Test notification</button>'
+        )
+    return f"""
+<fieldset class="settings-group">
+  <legend>
+    <span>{escape(title)}</span>
+    {test_button}
+  </legend>
+  <div class="settings-group-grid">
+    {fields}
+  </div>
+</fieldset>"""
 
 
 def setting_field(key: str, value: str) -> str:
@@ -609,8 +644,30 @@ button.secondary {
 }
 .settings-grid {
   display: grid;
+  gap: 16px;
+}
+.settings-group {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin: 0;
+  padding: 14px;
+  min-width: 0;
+}
+.settings-group legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 0 4px;
+  color: var(--text);
+  font-weight: 800;
+}
+.settings-group-grid {
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  margin-top: 12px;
 }
 label { min-width: 0; }
 input, select {
@@ -673,6 +730,6 @@ select { appearance: auto; }
   }
   .layout { padding: 12px; }
   .panel { padding: 14px; }
-  .metrics, .settings-grid { grid-template-columns: 1fr; }
+  .metrics, .settings-group-grid { grid-template-columns: 1fr; }
 }
 """
