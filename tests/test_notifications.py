@@ -98,6 +98,6 @@ async def test_send_job_notification_posts_json(monkeypatch: pytest.MonkeyPatch)
     assert posts == [
         (
             "http://rocketchat/hooks/test",
-            {"text": "Upload completed: Done\nJob: #1\nStatus: completed"},
+            {"text": "Upload completed: Done\nJob: #1\nAttempt: 0\nStatus: completed"},
         )
     ]

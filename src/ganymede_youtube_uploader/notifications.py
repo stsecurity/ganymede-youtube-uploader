@@ -21,6 +21,7 @@ def build_job_notification_text(job: UploadJob, event: str) -> str:
     lines = [
         f"{label}: {job.title or f'Job #{job.id}'}",
         f"Job: #{job.id}",
+        f"Attempt: {job.attempt_count or 0}",
         f"Status: {job.status.value}",
     ]
     if job.ganymede_vod_id:

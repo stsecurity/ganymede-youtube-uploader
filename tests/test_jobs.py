@@ -75,6 +75,11 @@ class FakeYouTube:
         pass
 
 
+class FailingVerificationYouTube(FakeYouTube):
+    def wait_until_processed(self, *args: Any, **kwargs: Any) -> YouTubeVerification:
+        return YouTubeVerification(False, {}, {}, "still processing")
+
+
 def settings(tmp_path: Path) -> Settings:
     return Settings(
         database_url="sqlite:///:memory:",
@@ -310,6 +315,41 @@ async def test_completed_job_sends_webhook_notification(
 
 
 @pytest.mark.asyncio
+async def test_retried_job_with_existing_youtube_id_sends_success_notification(
+    session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: list[tuple[int, int, str]] = []
+
+    async def fake_send_notification(settings: Settings, job: UploadJob, event: str) -> None:
+        sent.append((job.id, job.attempt_count, event))
+
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.jobs.send_job_notification", fake_send_notification
+    )
+    fake_ganymede = FakeGanymede(tmp_path)
+    fake_youtube = FakeYouTube()
+    configured = settings_with_delete(tmp_path).model_copy(
+        update={
+            "webhook_notifications_enabled": True,
+            "webhook_notification_url": "http://rocketchat/hooks/test",
+        }
+    )
+    processor = JobProcessor(configured, fake_ganymede, fake_youtube)
+    job = create_or_update_job(session, ganymede_vod_id="vod-1")
+    job.status = JobStatus.RECEIVED
+    job.youtube_video_id = "yt-existing"
+    job.local_duration = 120
+    job.attempt_count = 1
+    session.commit()
+
+    result = await processor.process(session, job)
+
+    assert result.status == JobStatus.COMPLETED
+    assert fake_youtube.uploads == 0
+    assert sent == [(job.id, 2, "completed")]
+
+
+@pytest.mark.asyncio
 async def test_failed_job_sends_webhook_notification(
     session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -336,3 +376,38 @@ async def test_failed_job_sends_webhook_notification(
 
     assert result.status == JobStatus.FAILED
     assert sent == [(job.id, "failed")]
+
+
+@pytest.mark.asyncio
+async def test_retried_job_sends_failure_notification(
+    session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: list[tuple[int, int, str]] = []
+
+    async def fake_send_notification(settings: Settings, job: UploadJob, event: str) -> None:
+        sent.append((job.id, job.attempt_count, event))
+
+    monkeypatch.setattr(
+        "ganymede_youtube_uploader.jobs.send_job_notification", fake_send_notification
+    )
+    fake_ganymede = FakeGanymede(tmp_path)
+    fake_youtube = FailingVerificationYouTube()
+    configured = settings(tmp_path).model_copy(
+        update={
+            "webhook_notifications_enabled": True,
+            "webhook_notification_url": "http://rocketchat/hooks/test",
+        }
+    )
+    processor = JobProcessor(configured, fake_ganymede, fake_youtube)
+    job = create_or_update_job(session, ganymede_vod_id="vod-1")
+    job.status = JobStatus.RECEIVED
+    job.youtube_video_id = "yt-existing"
+    job.local_duration = 120
+    job.attempt_count = 1
+    session.commit()
+
+    result = await processor.process(session, job)
+
+    assert result.status == JobStatus.FAILED
+    assert fake_youtube.uploads == 0
+    assert sent == [(job.id, 2, "failed")]

@@ -221,6 +221,8 @@ class JobProcessor:
     async def process(self, session: Session, job: UploadJob) -> UploadJob:
         if job.status in {JobStatus.COMPLETED, JobStatus.SKIPPED}:
             return job
+        job.attempt_count += 1
+        session.commit()
         if job.youtube_video_id and job.status not in {
             JobStatus.COMPLETED,
             JobStatus.NEEDS_MANUAL_CLEANUP,
@@ -228,7 +230,6 @@ class JobProcessor:
             JobStatus.SKIPPED,
         }:
             return await self.verify_and_cleanup(session, job)
-        job.attempt_count += 1
         try:
             await self._run(session, job)
         except Exception as exc:
